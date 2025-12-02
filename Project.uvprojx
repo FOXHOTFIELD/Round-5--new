@@ -665,6 +665,16 @@
               <FileType>5</FileType>
               <FilePath>.\System\myHeader.h</FilePath>
             </File>
+            <File>
+              <FileName>Menu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\System\Menu.c</FilePath>
+            </File>
+            <File>
+              <FileName>Menu.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\System\Menu.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
