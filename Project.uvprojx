@@ -665,11 +665,6 @@
               <FileType>5</FileType>
               <FilePath>.\System\myHeader.h</FilePath>
             </File>
-            <File>
-              <FileName>myClaim.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\System\myClaim.h</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>
