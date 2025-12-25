@@ -27,10 +27,12 @@ static void Menu_MoveItem(KeyEvent_t ev);
 
 
 // 菜单项：避免与 enum 名称冲突，变量以 "MenuItem_" 前缀命名
-// 命名子项（保留为独立对象，代码更清晰）
-const MenuItem MenuItem_Main_Run =
-{
-    .Funcs = { .Func_Up_Down = NULL, .Func_Toggle = NULL, .Func_Toggle_Long = NULL },
+const MenuItem MenuItem_Main_Run = {
+    .Funcs = {
+        .Func_Up_Down = NULL,
+        .Func_Toggle = NULL,
+        .Func_Toggle_Long = NULL
+    },
     .Page_Index = Main_Run,
     .OptionCount = 1,
     .Stuff = "\n",
@@ -38,26 +40,31 @@ const MenuItem MenuItem_Main_Run =
     .subItem = NULL
 };
 
-const MenuItem MenuItem_Main_Data =
-    {
-        .Funcs = {.Func_Up_Down = Menu_MoveCursor, .Func_Toggle = NULL, .Func_Toggle_Long = Menu_MoveItem},
-        .Page_Index = Main_Data,
-        .OptionCount = 2,
-        .Stuff = "Speed\nAngle\n",
-        .Title = "Data",
-        .subItem = NULL
-    };
+const MenuItem MenuItem_Main_Data = {
+    .Funcs = {
+        .Func_Up_Down = Menu_MoveCursor,
+        .Func_Toggle = NULL,
+        .Func_Toggle_Long = Menu_MoveItem
+    },
+    .Page_Index = Main_Data,
+    .OptionCount = 2,
+    .Stuff = "Speed\nAngle\n",
+    .Title = "Data",
+    .subItem = NULL
+};
 
 // 子菜单指针数组（初始化为指向上面的命名子项）
-const MenuItem * const MenuItem_Main_SubItems[] =
-{
+const MenuItem * const MenuItem_Main_SubItems[] = {
     &MenuItem_Main_Run,
     &MenuItem_Main_Data
 };
 
-const MenuItem MenuItem_Main =
-{
-    .Funcs = { .Func_Up_Down = Menu_MoveCursor, .Func_Toggle = Menu_MoveItem, .Func_Toggle_Long = NULL},
+const MenuItem MenuItem_Main = {
+    .Funcs = {
+        .Func_Up_Down = Menu_MoveCursor,
+        .Func_Toggle = Menu_MoveItem,
+        .Func_Toggle_Long = NULL
+    },
     .Page_Index = Main,
     .OptionCount = 2,
     .Stuff = "Run\nData",
@@ -66,8 +73,7 @@ const MenuItem MenuItem_Main =
 };
 
 //菜单状态变量
-MenuStatus Menu_Status =
-{
+MenuStatus Menu_Status = {
     .Cursor_Index = 1,
     .Page_Index = Main,
     .curItem = &MenuItem_Main
