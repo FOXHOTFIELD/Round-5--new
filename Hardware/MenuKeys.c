@@ -14,7 +14,7 @@ extern volatile BaseType_t oled_update_blocked;
 
 // ---------------- 轮询扫描按键（不使用 EXTI） ----------------
 #define KEY_DEBOUNCE_MS       40
-#define TOGGLE_LONG_MS        1000
+#define TOGGLE_LONG_MS        700
 #define SCAN_PERIOD_MS        10
 
 // 计算防抖需要的扫描次数
@@ -104,8 +104,11 @@ static void prv_scan_timer_cb(TimerHandle_t xTimer)
                 } else {
                     // 释放已确认
                     if (i == IDX_TOGGLE) {
-                        KeyEvent_t ev = toggle_long_fired ? KEY_EVENT_Toggle_Long : KEY_EVENT_Toggle;
-                        if (xKeyQueue) xQueueSend(xKeyQueue, &ev, 0);
+                        /* 如果已经触发并发送了长按事件，释放时不再发送普通按键事件，避免重复 */
+                        if (!toggle_long_fired) {
+                            KeyEvent_t ev = KEY_EVENT_Toggle;
+                            if (xKeyQueue) xQueueSend(xKeyQueue, &ev, 0);
+                        }
                         key_pressed_flag[i] = 0;
                         key_pressed_ms[i] = 0;
                         toggle_long_fired = 0;
@@ -122,6 +125,11 @@ static void prv_scan_timer_cb(TimerHandle_t xTimer)
             key_pressed_ms[IDX_TOGGLE] += SCAN_PERIOD_MS;
             if (!toggle_long_fired && key_pressed_ms[IDX_TOGGLE] >= TOGGLE_LONG_MS) {
                 toggle_long_fired = 1;
+                /* 在达到长按阈值时立即发送长按事件（Timer 服务/任务上下文） */
+                if (xKeyQueue) {
+                    KeyEvent_t ev = KEY_EVENT_Toggle_Long;
+                    xQueueSend(xKeyQueue, &ev, 0);
+                }
             }
         }
     }

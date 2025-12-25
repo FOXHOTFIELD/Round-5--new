@@ -23,16 +23,46 @@ static void Menu_DrawItem(void);
 static void Menu_DrawCursor(void);
 static void Menu_ShowDebug(void);
 static void Menu_MoveCursor(KeyEvent_t ev);
+static void Menu_MoveItem(KeyEvent_t ev);
 
 
-//菜单Main项目
-const MenuItem Menu_Main =
+// 菜单项：避免与 enum 名称冲突，变量以 "MenuItem_" 前缀命名
+// 命名子项（保留为独立对象，代码更清晰）
+const MenuItem MenuItem_Main_Run =
 {
-    .Funcs = { .Func_Up_Down = Menu_MoveCursor, .Func_Toggle = NULL, .Func_Toggle_Long = NULL },
+    .Funcs = { .Func_Up_Down = NULL, .Func_Toggle = NULL, .Func_Toggle_Long = NULL },
+    .Page_Index = Main_Run,
+    .OptionCount = 1,
+    .Stuff = "\n",
+    .Title = "Run",
+    .subItem = NULL
+};
+
+const MenuItem MenuItem_Main_Data =
+    {
+        .Funcs = {.Func_Up_Down = Menu_MoveCursor, .Func_Toggle = NULL, .Func_Toggle_Long = Menu_MoveItem},
+        .Page_Index = Main_Data,
+        .OptionCount = 2,
+        .Stuff = "Speed\nAngle\n",
+        .Title = "Data",
+        .subItem = NULL
+    };
+
+// 子菜单指针数组（初始化为指向上面的命名子项）
+const MenuItem * const MenuItem_Main_SubItems[] =
+{
+    &MenuItem_Main_Run,
+    &MenuItem_Main_Data
+};
+
+const MenuItem MenuItem_Main =
+{
+    .Funcs = { .Func_Up_Down = Menu_MoveCursor, .Func_Toggle = Menu_MoveItem, .Func_Toggle_Long = NULL},
     .Page_Index = Main,
     .OptionCount = 2,
     .Stuff = "Run\nData",
-    .Title = "Main"
+    .Title = "Main",
+    .subItem = MenuItem_Main_SubItems
 };
 
 //菜单状态变量
@@ -40,7 +70,7 @@ MenuStatus Menu_Status =
 {
     .Cursor_Index = 1,
     .Page_Index = Main,
-    .curItem = &Menu_Main
+    .curItem = &MenuItem_Main
 };
 
 /**
@@ -58,6 +88,7 @@ void Menu_Init(void)
 
     BaseType_t xRes = xTaskCreate(vMenuTask, "MenuTask", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
     if (xRes != pdPASS)
+
         return;
 
     if (xMenuShowHandle == NULL) {
@@ -71,13 +102,14 @@ void Menu_Init(void)
 }
 
 /**
- * 菜单主任务（事件处理）（FreeRTOS 任务）
+  菜单主任务（事件处理）（FreeRTOS 任务）
  *
  * 功能：从按键事件队列阻塞读取 `KeyEvent_t`，根据事件更新菜单状态、
  *       调用当前菜单项的回调（若已分配），并通知显示任务刷新。
  * 参数：`pv` - 任务参数（未使用）
  * 返回：此函数不会返回（任务循环）
  */
+
 static void vMenuTask(void *pv)
 {
     KeyEvent_t ev;
@@ -85,21 +117,25 @@ static void vMenuTask(void *pv)
     {
         ev = Menu_GetKeyEvent(portMAX_DELAY);
 
+        MenuHandler Func = NULL;
         switch (ev)
         {
         case KEY_EVENT_Up:
         case KEY_EVENT_Down:
-            /* 安全地调用当前菜单项的回调（如果已分配） */
-            {
-                MenuHandler Func = Menu_Status.curItem->Funcs.Func_Up_Down;
-                if (Func != NULL)
-                    Func(ev);
-            }
+                Func = Menu_Status.curItem->Funcs.Func_Up_Down;
             break;
-
+        case KEY_EVENT_Toggle:
+                Func = Menu_Status.curItem->Funcs.Func_Toggle;
+            break;
+        case KEY_EVENT_Toggle_Long:
+                Func = Menu_Status.curItem->Funcs.Func_Toggle_Long;
+            break;
         default:
             break;
         }
+
+        if (Func != NULL)
+            Func(ev);
 
         if (xMenuShowHandle != NULL)
             xTaskNotifyGive(xMenuShowHandle);
@@ -126,12 +162,13 @@ static void vMenu_ShowTask(void* pv)
         if (oled_update_blocked == pdTRUE)
             continue;
 
+        OLED_Clear();
+
         Menu_DrawItem();
         Menu_DrawCursor();
         Menu_ShowDebug();
 
         OLED_Update();
-
     }
 }
 
@@ -148,7 +185,8 @@ static void Menu_DrawItem(void)
     char* Stuff = Menu_Status.curItem->Stuff;
     char* Title = Menu_Status.curItem->Title;
 
-    OLED_ShowString(0, 0, Title, OLED_8X16);
+    OLED_ShowString(0, 0, Title, OLED_6X8);
+    OLED_DrawLine(0, 11, 127, 11);
 
     /* 将 Stuff 按 "\n" 分割，分别显示在第 1、2、3 行（使用 OLED_8X16，高度 16 像素，Y = 16,32,48） */
     char lineBuf[32];
@@ -204,8 +242,7 @@ static void Menu_DrawCursor(void)
  */
 static void Menu_ShowDebug(void)
 {
-    OLED_ShowNum(50, 50, Flag, 1, OLED_6X8);
-    OLED_ShowNum(100, 0, Menu_Status.Cursor_Index, 1, OLED_6X8);
+    //OLED_ShowNum(100, 0, Menu_Status.Cursor_Index, 1, OLED_6X8);
 }
 
 /**
@@ -241,8 +278,56 @@ static void Menu_MoveCursor(KeyEvent_t ev)
         break;
     }
 
+    // 更新状态结构中的光标索引，显示任务收到通知后会重绘光标
     Menu_Status.Cursor_Index = cursor_index;
 
 }
 
+static void Menu_MoveItem(KeyEvent_t ev)
+{
+
+    switch (ev)
+    {
+    case KEY_EVENT_Toggle:
+        {
+            /* 进入子菜单：根据当前光标索引选择子项并更新状态 */
+            const MenuItem *cur = Menu_Status.curItem;
+            const MenuItem * const *subs = cur->subItem;
+
+            if (subs == NULL || cur->OptionCount == 0)
+                return;
+
+            uint8_t idx = Menu_Status.Cursor_Index;
+            if (idx < 1 || idx > cur->OptionCount)
+                return;
+
+            const MenuItem *target = subs[idx - 1];
+
+            Menu_Status.curItem = target;
+            Menu_Status.Page_Index = target->Page_Index;
+            Menu_Status.Cursor_Index = 1; // 进入新页面时光标回到第 1 项
+
+            break;
+        }
+    case KEY_EVENT_Toggle_Long:
+        {
+            /*
+            * 长按切回主菜单：
+            * - 使用 Page_Index 的值设置光标索引（如果 PageIndex 枚举与光标位置有映射关系），
+            *   这里通过强制类型转换将页面索引映射为光标索引，保证不越界。
+            * - 将 Page_Index 置回 Main，并把当前项指回主菜单对象。
+            */
+            Menu_Status.Cursor_Index = (CursorIndex)Menu_Status.Page_Index;
+            Menu_Status.Page_Index = Main;
+            Menu_Status.curItem = &MenuItem_Main;
+
+            break;
+        }
+    default:
+        break;
+    }
+
+    if (xMenuShowHandle != NULL)
+        xTaskNotifyGive(xMenuShowHandle);
+}
 

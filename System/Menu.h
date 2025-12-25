@@ -57,6 +57,7 @@ static void Menu_thrd_correct(void);
 enum PageIndex
 {
     Main = 0,
+    Main_Run,
     Main_Data,
     Main_Control,
 };
@@ -85,6 +86,8 @@ struct MenuItem
     uint8_t OptionCount;
     PageIndex Page_Index;
     MenuFuncs Funcs;
+    const struct MenuItem * const *subItem; // 指向子菜单项指针数组（数组元素为指向子项的指针），使用 OptionCount 表示长度
+    
 };
 //菜单项目结构体
 typedef struct MenuItem MenuItem;
