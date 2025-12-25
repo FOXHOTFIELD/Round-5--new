@@ -1,6 +1,8 @@
 #include "myHeader.h"
 
-//#define TEST
+extern void Delay_ms(uint32_t xms);
+
+#define TEST
 
 #ifndef TEST
 
@@ -64,6 +66,7 @@ int main(void)
 	}
 }
 
+#endif
 
 #ifdef TEST
 
@@ -71,12 +74,18 @@ int main(void)
 int main(void)
 {
 	/* 系统和外设初始化 */
-	SystemInit();
 	OLED_Init();
+    
+    OLED_Clear();
 	OLED_ShowChar(0, 0, '1', OLED_6X8);
 	OLED_Update();
+    
+    Serial_Init();
 
-	/* 使能 GPIOC 时钟并配置 PC13 为推挽输出 */
+
+    uint8_t flag = 0;
+
+/* 使能 GPIOC 时钟并配置 PC13 为推挽输出 */
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
 	GPIO_InitTypeDef GPIO_InitStructure;
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_13;
@@ -87,19 +96,30 @@ int main(void)
 	/* 初始为复位（视板子 LED 极性而定） */
 	GPIO_ResetBits(GPIOC, GPIO_Pin_13);
 
-	/* 无限循环：每 0.5 秒翻转一次 LED */
+    extern uint8_t Serial_RxBuffer[100];
+    extern uint16_t Serial_RxLength;
+// 使用 Serial_RxBuffer 和 Serial_RxLength
 	while (1)
 	{
-		BitAction cur = (BitAction)GPIO_ReadOutputDataBit(GPIOC, GPIO_Pin_13);
-		GPIO_WriteBit(GPIOC, GPIO_Pin_13, (BitAction)(1 - cur));
-		Delay_ms(500);
+	    
+	    if (Serial_GetRxFlag()) {
+            OLED_ShowString(0, 20, (char*)Serial_RxBuffer, OLED_6X8);
+            OLED_Update();
+
+            if (GPIO_ReadOutputDataBit(GPIOC, GPIO_Pin_13) == Bit_RESET) {
+                GPIO_SetBits(GPIOC, GPIO_Pin_13);
+            } else {
+                GPIO_ResetBits(GPIOC, GPIO_Pin_13);
+            
+            }
+            
+            Serial_SendString("Ok");
+            // 切换LED状态
+        }
 	}
 }
 
 
-#endif
-
-
-
 
 #endif
+
