@@ -36,6 +36,12 @@ void MadgwickAHRSupdate(float gx, float gy, float gz, float ax, float ay, float 
 // 仅 IMU 融合（无磁力计）：航向不可观（仅相对变化），适用于磁力计不可用或失效的场景。
 void MadgwickAHRSupdateIMU(float gx, float gy, float gz, float ax, float ay, float az);
 
+// 三角函数近似模式配置（运行时可切换）
+#define TRIG_STD  0
+#define TRIG_LUT  1
+#define TRIG_POLY 2
+void set_trig_approx_mode(int mode);
+
 
 
 #endif

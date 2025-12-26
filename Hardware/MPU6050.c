@@ -79,6 +79,9 @@ void MPU6050_Init(void)
 	Soft_I2C_Init();
 	Delay_ms(10);
 
+	// 配置姿态解算的三角函数近似模式（可选：TRIG_STD/TRIG_LUT/TRIG_POLY）
+	set_trig_approx_mode(TRIG_POLY);
+
 	MPU6050_WriteReg(MPU6050_PWR_MGMT_1, 0x01); // wake, set clock
 	MPU6050_WriteReg(MPU6050_PWR_MGMT_2, 0x00);
 	MPU6050_WriteReg(MPU6050_SMPLRT_DIV, 0x01);

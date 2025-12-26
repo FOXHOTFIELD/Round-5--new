@@ -52,6 +52,139 @@
 
 #include "MadgwickAHRS.h"
 #include <math.h>
+#include <stdint.h>
+
+// 前置声明：fast 三角近似中会调用 invSqrt
+float invSqrt(float x);
+
+// 三角函数近似模式（可运行时切换）：
+// 0=使用标准库；1=查表法（LUT）；2=多项式近似
+#ifndef TRIG_APPROX_DEFAULT
+#define TRIG_APPROX_DEFAULT 1
+#endif
+static volatile int trig_mode = TRIG_APPROX_DEFAULT;
+void set_trig_approx_mode(int mode) { if (mode>=TRIG_STD && mode<=TRIG_POLY) trig_mode = mode; }
+
+// 可调查表精度（编译期参数）：
+#ifndef ASIN_LUT_SIZE
+#define ASIN_LUT_SIZE 257   // [-1,1] 区间查表，线性插值
+
+#endif
+
+#ifndef ATAN_LUT_SIZE
+#define ATAN_LUT_SIZE 257   // [0,1]  区间查表，线性插值
+
+#endif
+
+// 查表实现
+static float asin_lut[ASIN_LUT_SIZE];
+static float atan_lut[ATAN_LUT_SIZE];
+static int trig_lut_ready = 0;
+static void init_trig_lut(void) {
+	if (trig_lut_ready) return;
+	for (int i = 0; i < ASIN_LUT_SIZE; ++i) {
+		float x = -1.0f + (2.0f * i) / (ASIN_LUT_SIZE - 1);
+		asin_lut[i] = asinf(x);
+	}
+	for (int i = 0; i < ATAN_LUT_SIZE; ++i) {
+		float t = (float)i / (ATAN_LUT_SIZE - 1);
+		atan_lut[i] = atanf(t);
+	}
+	trig_lut_ready = 1;
+}
+static inline float lut_asinf(float x) {
+	if (!trig_lut_ready) init_trig_lut();
+	if (x <= -1.0f) return -M_PI / 2.0f;
+	if (x >=  1.0f) return  M_PI / 2.0f;
+	float pos = (x + 1.0f) * 0.5f * (ASIN_LUT_SIZE - 1);
+	int i = (int)pos;
+	float frac = pos - (float)i;
+	if (i >= ASIN_LUT_SIZE - 1) { i = ASIN_LUT_SIZE - 2; frac = 1.0f; }
+	float a0 = asin_lut[i];
+	float a1 = asin_lut[i + 1];
+	return a0 + (a1 - a0) * frac;
+}
+static inline float lut_atan_unit(float t) {
+	if (!trig_lut_ready) init_trig_lut();
+	if (t <= 0.0f) return 0.0f;
+	if (t >= 1.0f) return atan_lut[ATAN_LUT_SIZE - 1];
+	float pos = t * (ATAN_LUT_SIZE - 1);
+	int i = (int)pos;
+	float frac = pos - (float)i;
+	if (i >= ATAN_LUT_SIZE - 1) { i = ATAN_LUT_SIZE - 2; frac = 1.0f; }
+	float a0 = atan_lut[i];
+	float a1 = atan_lut[i + 1];
+	return a0 + (a1 - a0) * frac;
+}
+
+// 多项式近似实现
+static inline float poly_atan01(float t) {
+	// 经验近似：atan(t) ≈ t / (1 + 0.28 t^2), t ∈ [0,1]
+	float tt = t * t;
+	return t / (1.0f + 0.28f * tt);
+}
+static inline float poly_atan2f(float y, float x) {
+	if (x == 0.0f && y == 0.0f) return 0.0f;
+	float ax = x >= 0.0f ? x : -x;
+	float ay = y >= 0.0f ? y : -y;
+	float angle;
+	if (ax > ay) {
+		float t = (ax == 0.0f) ? 0.0f : (ay / ax);
+		angle = poly_atan01(t);
+		if (x < 0.0f) angle = (y >= 0.0f) ? (M_PI - angle) : (angle - M_PI);
+		else          angle = (y >= 0.0f) ? angle : -angle;
+	} else {
+		float t = (ay == 0.0f) ? 1.0f : (ax / ay);
+		angle = (M_PI * 0.5f) - poly_atan01(t);
+		if (y < 0.0f) angle = (x >= 0.0f) ? -angle : (angle - M_PI);
+		else          angle = (x >= 0.0f) ? angle : (M_PI - angle);
+	}
+	return angle;
+}
+static inline float poly_asinf(float x) {
+	// 利用恒等式 asin(x) = atan2(x, sqrt(1-x^2))，sqrt 用 invSqrt 近似
+	if (x <= -1.0f) return -M_PI / 2.0f;
+	if (x >=  1.0f) return  M_PI / 2.0f;
+	float s = 1.0f - x * x;
+	if (s <= 0.0f) return (x >= 0.0f) ? (M_PI / 2.0f) : (-M_PI / 2.0f);
+	float inv = invSqrt(s);
+	float root = s * inv; // ≈ sqrt(s)
+	return poly_atan2f(x, root);
+}
+
+// 统一包装：根据当前模式选择实现
+static inline float fast_asinf(float x) {
+	switch (trig_mode) {
+		case TRIG_LUT:  return lut_asinf(x);
+		case TRIG_POLY: return poly_asinf(x);
+		default:        return asinf(x);
+	}
+}
+static inline float fast_atan2f(float y, float x) {
+	switch (trig_mode) {
+		case TRIG_LUT:  {
+			if (!trig_lut_ready) init_trig_lut();
+			if (x == 0.0f && y == 0.0f) return 0.0f;
+			float ax = x >= 0.0f ? x : -x;
+			float ay = y >= 0.0f ? y : -y;
+			float angle;
+			if (ax > ay) {
+				float t = (ax == 0.0f) ? 0.0f : (ay / ax);
+				angle = lut_atan_unit(t);
+				if (x < 0.0f) angle = (y >= 0.0f) ? (M_PI - angle) : (angle - M_PI);
+				else          angle = (y >= 0.0f) ? angle : -angle;
+			} else {
+				float t = (ay == 0.0f) ? 1.0f : (ax / ay);
+				angle = (M_PI * 0.5f) - lut_atan_unit(t);
+				if (y < 0.0f) angle = (x >= 0.0f) ? -angle : (angle - M_PI);
+				else          angle = (x >= 0.0f) ? angle : (M_PI - angle);
+			}
+			return angle;
+		}
+		case TRIG_POLY: return poly_atan2f(y, x);
+		default:        return atan2f(y, x);
+	}
+}
 
 //---------------------------------------------------------------------------------------------------
 // Definitions（参数定义）
@@ -60,6 +193,8 @@
 
 #define sampleFreq	100.0f		// 采样频率（Hz）。务必与实际采样一致，否则积分会产生误差。
 #define betaDef		0.3f		// 默认算法增益（2*Kp）。越大越相信加速度/磁力计，收敛更快但动态下可能抖。
+// 预计算采样周期倒数，避免在每次更新中重复除法
+static const float invSampleFreq = 1.0f / sampleFreq;
 
 //---------------------------------------------------------------------------------------------------
 // Variable definitions（全局状态变量）
@@ -72,7 +207,6 @@ float yaw = 0, pitch = 0, roll = 0;
 //---------------------------------------------------------------------------------------------------
 // Function declarations（内部函数声明）
 
-float invSqrt(float x); // 快速反平方根，用于归一化
 
 //====================================================================================================
 // Functions
@@ -91,10 +225,12 @@ void MadgwickAHRSupdate(float gx, float gy, float gz, float ax, float ay, float 
 	float qDot1, qDot2, qDot3, qDot4;
 	float hx, hy;
 	float _2q0mx, _2q0my, _2q0mz, _2q1mx, _2bx, _2bz, _4bx, _4bz, _2q0, _2q1, _2q2, _2q3, _2q0q2, _2q2q3, q0q0, q0q1, q0q2, q0q3, q1q1, q1q2, q1q3, q2q2, q2q3, q3q3;
+	const float dt = invSampleFreq;
 
 	// Use IMU algorithm if magnetometer measurement invalid (avoids NaN in magnetometer normalisation)
 	// 若磁力计无效（全为 0），避免在归一化时出现 NaN，改用仅 IMU 更新。
-	if((mx == 0.0f) && (my == 0.0f) && (mz == 0.0f)) {
+	float magNorm2 = mx * mx + my * my + mz * mz;
+	if(magNorm2 <= 1e-12f) {
 		MadgwickAHRSupdateIMU(gx, gy, gz, ax, ay, az);
 		return;
 	}
@@ -108,18 +244,19 @@ void MadgwickAHRSupdate(float gx, float gy, float gz, float ax, float ay, float 
 
 	// Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
 	// 仅当加速度计非零时才计算反馈项，避免归一化产生 NaN。
-	if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
+	float accNorm2 = ax * ax + ay * ay + az * az;
+	if(accNorm2 > 1e-12f) {
 
 		// Normalise accelerometer measurement
 		// 加速度归一化（仅方向用于误差函数）
-		recipNorm = invSqrt(ax * ax + ay * ay + az * az);
+		recipNorm = invSqrt(accNorm2);
 		ax *= recipNorm;
 		ay *= recipNorm;
 		az *= recipNorm;   
 
 		// Normalise magnetometer measurement
 		// 磁力计归一化（仅方向用于误差函数）
-		recipNorm = invSqrt(mx * mx + my * my + mz * mz);
+		recipNorm = invSqrt(magNorm2);
 		mx *= recipNorm;
 		my *= recipNorm;
 		mz *= recipNorm;
@@ -151,7 +288,9 @@ void MadgwickAHRSupdate(float gx, float gy, float gz, float ax, float ay, float 
 		// 地磁参考方向计算：在当前姿态下，地磁在传感器系的期望分量（hx, hy, 以及垂直分量 bz）。
 		hx = mx * q0q0 - _2q0my * q3 + _2q0mz * q2 + mx * q1q1 + _2q1 * my * q2 + _2q1 * mz * q3 - mx * q2q2 - mx * q3q3;
 		hy = _2q0mx * q3 + my * q0q0 - _2q0mz * q1 + _2q1mx * q2 - my * q1q1 + my * q2q2 + _2q2 * mz * q3 - my * q3q3;
-		_2bx = sqrt(hx * hx + hy * hy);
+		_2bx = sqrtf(hx * hx + hy * hy);
+		// 使用 invSqrt 近似替代 sqrtf，提高速度：sqrt(s) ≈ s * invSqrt(s)
+		{ float s = hx * hx + hy * hy; float inv = invSqrt(s); _2bx = s * inv; }
 		_2bz = -_2q0mx * q2 + _2q0my * q1 + mz * q0q0 + _2q1mx * q3 - mz * q1q1 + _2q2 * my * q3 - mz * q2q2 + mz * q3q3;
 		_4bx = 2.0f * _2bx;
 		_4bz = 2.0f * _2bz;
@@ -179,10 +318,10 @@ void MadgwickAHRSupdate(float gx, float gy, float gz, float ax, float ay, float 
 
 	// Integrate rate of change of quaternion to yield quaternion
 	// 以采样周期（1/sampleFreq）积分四元数导数，得到新的姿态。
-	q0 += qDot1 * (1.0f / sampleFreq);
-	q1 += qDot2 * (1.0f / sampleFreq);
-	q2 += qDot3 * (1.0f / sampleFreq);
-	q3 += qDot4 * (1.0f / sampleFreq);
+	q0 += qDot1 * dt;
+	q1 += qDot2 * dt;
+	q2 += qDot3 * dt;
+	q3 += qDot4 * dt;
 
 	// Normalise quaternion
 	// 归一化为单位四元数，避免数值漂移导致长度偏离 1。
@@ -202,6 +341,7 @@ void MadgwickAHRSupdateIMU(float gx, float gy, float gz, float ax, float ay, flo
 	float s0, s1, s2, s3;
 	float qDot1, qDot2, qDot3, qDot4;
 	float _2q0, _2q1, _2q2, _2q3, _4q0, _4q1, _4q2 ,_8q1, _8q2, q0q0, q1q1, q2q2, q3q3;
+	const float dt = invSampleFreq;
 
 	// Rate of change of quaternion from gyroscope
 	// 陀螺积分的四元数导数（推导同上）
@@ -212,11 +352,12 @@ void MadgwickAHRSupdateIMU(float gx, float gy, float gz, float ax, float ay, flo
 
 	// Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
 	// 仅在加速度非零时进行反馈计算。
-	if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
+	float accNorm2 = ax * ax + ay * ay + az * az;
+	if(accNorm2 > 1e-12f) {
 
 		// Normalise accelerometer measurement
 		// 加速度归一化（仅方向）
-		recipNorm = invSqrt(ax * ax + ay * ay + az * az);
+		recipNorm = invSqrt(accNorm2);
 		ax *= recipNorm;
 		ay *= recipNorm;
 		az *= recipNorm;   
@@ -259,10 +400,10 @@ void MadgwickAHRSupdateIMU(float gx, float gy, float gz, float ax, float ay, flo
 
 	// Integrate rate of change of quaternion to yield quaternion
 	// 按采样周期积分四元数导数。
-	q0 += qDot1 * (1.0f / sampleFreq);
-	q1 += qDot2 * (1.0f / sampleFreq);
-	q2 += qDot3 * (1.0f / sampleFreq);
-	q3 += qDot4 * (1.0f / sampleFreq);
+	q0 += qDot1 * dt;
+	q1 += qDot2 * dt;
+	q2 += qDot3 * dt;
+	q3 += qDot4 * dt;
 
 	// Normalise quaternion
 	// 姿态归一化。
@@ -281,10 +422,11 @@ void MadgwickAHRSupdateIMU(float gx, float gy, float gz, float ax, float ay, flo
 
 float invSqrt(float x) {
 	float halfx = 0.5f * x;
-	float y = x;
-	long i = *(long*)&y;
-	i = 0x5f3759df - (i>>1);
-	y = *(float*)&i;
+	union { float f; uint32_t i; } conv;
+	conv.f = x;
+	conv.i = 0x5f3759dfu - (conv.i >> 1);
+	float y = conv.f;
+	// One Newton-Raphson iteration to improve accuracy
 	y = y * (1.5f - (halfx * y * y));
 	return y;
 }
@@ -300,21 +442,16 @@ float invSqrt(float x) {
 // 输出：yaw/pitch/roll（弧度）
 void quat_to_euler_zyx(float q0, float q1, float q2, float q3,
 					   float* yaw, float* pitch, float* roll) {
-    // 归一化以防数值漂移
-    float norm = sqrtf(q0*q0 + q1*q1 + q2*q2 + q3*q3);
-    if (norm == 0.0f) { *yaw = *pitch = *roll = 0.0f; return; }
-    q0 /= norm; q1 /= norm; q2 /= norm; q3 /= norm;
-
-    float siny_cosp = 2.0f * (q0*q3 + q1*q2);
-    float cosy_cosp = 1.0f - 2.0f * (q2*q2 + q3*q3);
-    *yaw = atan2f(siny_cosp, cosy_cosp);
+	float siny_cosp = 2.0f * (q0*q3 + q1*q2);
+	float cosy_cosp = 1.0f - 2.0f * (q2*q2 + q3*q3);
+	*yaw = fast_atan2f(siny_cosp, cosy_cosp);
 
     float sinp = 2.0f * (q0*q2 - q3*q1);
-    if (sinp >= 1.0f)      *pitch =  M_PI / 2.0f;   // clamp
-    else if (sinp <= -1.0f)*pitch = -M_PI / 2.0f;
-    else                   *pitch = asinf(sinp);
+	if (sinp >= 1.0f)      *pitch =  M_PI / 2.0f;   // clamp
+	else if (sinp <= -1.0f)*pitch = -M_PI / 2.0f;
+	else                   *pitch = fast_asinf(sinp);
 
     float sinr_cosp = 2.0f * (q0*q1 + q2*q3);
     float cosr_cosp = 1.0f - 2.0f * (q1*q1 + q2*q2);
-    *roll = atan2f(sinr_cosp, cosr_cosp);
+	*roll = fast_atan2f(sinr_cosp, cosr_cosp);
 }
