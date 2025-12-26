@@ -18,10 +18,7 @@
       <ViewName>Code Coverage</ViewName>
       <TableColWidths>877 160</TableColWidths>
     </View>
-    <View>
-      <WinId>204</WinId>
-      <ViewName>Performance Analyzer</ViewName>
-      <TableColWidths>1037</TableColWidths>
+          <Data>03000000740300000300000074030000</Data>
     </View>
   </SECTreeCtrl>
 
@@ -89,10 +86,7 @@
       <MaxPosition>
         <xPos>-1</xPos>
         <yPos>-1</yPos>
-      </MaxPosition>
-      <NormalPosition>
-        <Top>121</Top>
-        <Left>742</Left>
+          <Data>0100000074030000A80600008F030000</Data>
         <Right>1426</Right>
         <Bottom>838</Bottom>
       </NormalPosition>
@@ -560,10 +554,7 @@
         <RecentRowIndex>0</RecentRowIndex>
         <RectRecentDocked>
           <Len>16</Len>
-          <Data>DC00000066000000ED040000C1000000</Data>
-        </RectRecentDocked>
-        <RectRecentFloat>
-          <Len>16</Len>
+          <Data>010000005D030000A806000078030000</Data>
           <Data>F2000000090100006A03000094010000</Data>
         </RectRecentFloat>
       </Window>
@@ -1380,17 +1371,17 @@
         <RecentRowIndex>0</RecentRowIndex>
         <RectRecentDocked>
           <Len>16</Len>
-          <Data>1E04000066000000ED040000FD010000</Data>
+          <Data>03000000740300000300000074030000</Data>
         </RectRecentDocked>
         <RectRecentFloat>
           <Len>16</Len>
-          <Data>F200000009010000C7010000D0010000</Data>
+          <Data>0A0000000A0000006E0000006E000000</Data>
         </RectRecentFloat>
       </Window>
       <Window>
         <RegID>50007</RegID>
         <PaneID>50007</PaneID>
-        <IsVisible>0</IsVisible>
+        <IsVisible>1</IsVisible>
         <IsFloating>0</IsFloating>
         <IsTabbed>0</IsTabbed>
         <IsActivated>0</IsActivated>
@@ -1400,11 +1391,11 @@
         <RecentRowIndex>0</RecentRowIndex>
         <RectRecentDocked>
           <Len>16</Len>
-          <Data>1E04000066000000ED040000FD010000</Data>
+          <Data>0100000074030000A80600008F030000</Data>
         </RectRecentDocked>
         <RectRecentFloat>
           <Len>16</Len>
-          <Data>F200000009010000C7010000D0010000</Data>
+          <Data>0A0000000A0000006E0000006E000000</Data>
         </RectRecentFloat>
       </Window>
       <Window>
@@ -1530,7 +1521,7 @@
       <Window>
         <RegID>50014</RegID>
         <PaneID>50014</PaneID>
-        <IsVisible>0</IsVisible>
+        <IsVisible>1</IsVisible>
         <IsFloating>0</IsFloating>
         <IsTabbed>0</IsTabbed>
         <IsActivated>0</IsActivated>
@@ -1540,11 +1531,11 @@
         <RecentRowIndex>0</RecentRowIndex>
         <RectRecentDocked>
           <Len>16</Len>
-          <Data>1E04000066000000ED040000FD010000</Data>
+          <Data>010000005D030000A806000078030000</Data>
         </RectRecentDocked>
         <RectRecentFloat>
           <Len>16</Len>
-          <Data>F200000009010000C7010000D0010000</Data>
+          <Data>0A0000000A0000006E0000006E000000</Data>
         </RectRecentFloat>
       </Window>
       <Window>
