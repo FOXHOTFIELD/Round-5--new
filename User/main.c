@@ -1,14 +1,16 @@
 #include "myHeader.h"
+#include "MPU6050.h"
 
 extern void Delay_ms(uint32_t xms);
 
-#define TEST
+//#define TEST
 
 #ifndef TEST
 
 /* 从 Menu.c 导出菜单状态（在 Menu.c 中定义） */
 extern MenuStatus Menu_Status;
 
+#ifdef LEDtest
 /* LED 监控任务：当 Menu_Status.Cursor_Index == 1 时点亮 PC13，否则熄灭 */
 static void vLedMonitorTask(void *pvParameters)
 {
@@ -28,6 +30,7 @@ static void vLedMonitorTask(void *pvParameters)
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }
+#endif
 
 int main(void)
 {
@@ -42,20 +45,30 @@ int main(void)
 	OLED_Init();
 	OLED_ShowChar(0, 0, '1', OLED_6X8);
 	OLED_Update();
-	Menu_Init();
+    Serial_Init();
+	//Menu_Init();
+	MPU6050_Init();
 
-	/* 使能 GPIOC 时钟并配置 PC13 为推挽输出 */
-	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
-	GPIO_InitTypeDef GPIO_InitStructure;
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_13;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_Init(GPIOC, &GPIO_InitStructure);
-	/* 初始为熄灭（多数开发板 PC13 为低电平点亮） */
-	GPIO_SetBits(GPIOC, GPIO_Pin_13);
 
-	/* 创建 LED 监控任务 */
-	xTaskCreate(vLedMonitorTask, "LED", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+
+    #ifdef LEDtest
+
+        /* 使能 GPIOC 时钟并配置 PC13 为推挽输出 */
+        RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
+        GPIO_InitTypeDef GPIO_InitStructure;
+        GPIO_InitStructure.GPIO_Pin = GPIO_Pin_13;
+        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+        GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+        GPIO_Init(GPIOC, &GPIO_InitStructure);
+        /* 初始为熄灭（多数开发板 PC13 为低电平点亮） */
+        GPIO_SetBits(GPIOC, GPIO_Pin_13);
+
+        /* 创建 LED 监控任务 */
+        xTaskCreate(vLedMonitorTask, "LED", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+
+    #endif
+
+    
 
 	/* 启动调度 */
 	vTaskStartScheduler();
