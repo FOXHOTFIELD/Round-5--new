@@ -4,7 +4,13 @@
 #include "softi2c.h"
 #include "OLED.h"
 #include "Delay.h"
+#include "MadgwickAHRS.h"
 #include <stdlib.h>
+#include "Serial.h"
+
+#include "FreeRTOS.h"
+#include "portmacro.h"
+#include "task.h"
 
 #define MPU6050_ADDRESS    0xD0
 
@@ -12,6 +18,8 @@ int16_t AccX = 0, AccY = 0, AccZ = 0, GyroX = 0, GyroY = 0, GyroZ = 0;
 int16_t ax_off = 0, ay_off = 0, az_off = 0;
 int16_t gx_off = 0, gy_off = 0, gz_off = 0;
 uint8_t g_selfcorrect_finished = 0;
+
+void MPU6050_StartPoseTask(void);
 
 void MPU6050_WriteReg(uint8_t RegAddress, uint8_t Data)
 {
@@ -77,6 +85,9 @@ void MPU6050_Init(void)
 	MPU6050_WriteReg(MPU6050_CONFIG, 0x03);
 	MPU6050_WriteReg(MPU6050_GYRO_CONFIG, 0x18);
 	MPU6050_WriteReg(MPU6050_ACCEL_CONFIG, 0x00);
+    
+    
+    MPU6050_StartPoseTask();
 
 	MPU6050_SelfCorrect();
 }
@@ -187,4 +198,54 @@ void MPU6050_SelfCorrect(void)
 	gz_off = (int16_t)(gz_sum / samples);
 
 	g_selfcorrect_finished = 1;
+}
+
+static void vPoseUpdateTask(void *pvParameters)
+{
+    (void)pvParameters;
+    TickType_t last = xTaskGetTickCount();
+    const TickType_t period = pdMS_TO_TICKS(10); // 100 Hz
+
+    for (;;)
+    {
+        if(!g_selfcorrect_finished) {
+            vTaskDelay(period);
+            continue;
+        }
+
+        MPU6050_GetData(&AccX, &AccY, &AccZ, &GyroX, &GyroY, &GyroZ);
+
+        // 如果陀螺是度/秒，请先转换：
+        const float DEG2RAD = 3.14159265358979323846f / 180.0f;
+        // MPU6050 陀螺仪在±2000°/s量程下的灵敏度为 16.4 LSB/(°/s)
+        float gx_rad = (GyroX / 16.4f) * DEG2RAD;
+        float gy_rad = (GyroY / 16.4f) * DEG2RAD;
+        float gz_rad = (GyroZ / 16.4f) * DEG2RAD;
+
+        MadgwickAHRSupdateIMU(gx_rad, gy_rad, gz_rad, AccX, AccY, AccZ);
+        // 来自 MadgwickAHRS.c 的四元数转欧拉角函数原型
+        quat_to_euler_zyx(q0, q1, q2, q3, &yaw, &pitch, &roll);
+
+        //
+        const float RAD2DEG = 180.0f / 3.14159265358979323846f;
+        pitch *= RAD2DEG;
+        roll  *= RAD2DEG;
+        yaw   *= RAD2DEG;
+
+        //if(xShowTaskHandle != NULL)
+        //    xTaskNotifyGive(xShowTaskHandle);
+        
+        float aaa[3] = {pitch, roll, yaw};
+        Serial_SendJustFloat(aaa, 3);
+
+        vTaskDelayUntil(&last, period);
+
+    }
+}
+
+void MPU6050_StartPoseTask(void)
+{
+	const uint16_t stackDepth = 512; // words
+	const UBaseType_t priority = tskIDLE_PRIORITY + 2;
+	(void)xTaskCreate(vPoseUpdateTask, "Pose", stackDepth, NULL, priority, NULL);
 }
