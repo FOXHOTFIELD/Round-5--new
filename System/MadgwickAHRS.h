@@ -36,6 +36,11 @@ void MadgwickAHRSupdate(float gx, float gy, float gz, float ax, float ay, float 
 // 仅 IMU 融合（无磁力计）：航向不可观（仅相对变化），适用于磁力计不可用或失效的场景。
 void MadgwickAHRSupdateIMU(float gx, float gy, float gz, float ax, float ay, float az);
 
+/* 运行时设置采样频率（Hz）。
+ * 注意：应与姿态更新任务的实际循环频率一致，例如 100/200/250/500Hz。
+ */
+void MadgwickAHRS_SetSampleFreq(float hz);
+
 // 三角函数近似模式配置（运行时可切换）
 #define TRIG_STD  0
 #define TRIG_LUT  1

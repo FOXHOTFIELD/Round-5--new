@@ -191,10 +191,11 @@ static inline float fast_atan2f(float y, float x) {
 // sampleFreq：算法内部将陀螺积分按 1/sampleFreq 的时间步进行累计，因此必须与数据到达频率一致。
 // betaDef：默认反馈增益（2*Kp）。可在运行时通过修改全局变量 beta 进行调参。
 
-#define sampleFreq	100.0f		// 采样频率（Hz）。务必与实际采样一致，否则积分会产生误差。
 #define betaDef		0.3f		// 默认算法增益（2*Kp）。越大越相信加速度/磁力计，收敛更快但动态下可能抖。
-// 预计算采样周期倒数，避免在每次更新中重复除法
-static const float invSampleFreq = 1.0f / sampleFreq;
+// 采样频率（Hz）默认 100Hz，可在运行时由应用层调用 MadgwickAHRS_SetSampleFreq() 修改。
+static volatile float g_sampleFreq = 100.0f;
+// 预计算采样周期倒数，避免在每次更新中重复除法；随 g_sampleFreq 一起更新。
+static volatile float invSampleFreq = 1.0f / 100.0f;
 
 //---------------------------------------------------------------------------------------------------
 // Variable definitions（全局状态变量）
@@ -210,6 +211,16 @@ float yaw = 0, pitch = 0, roll = 0;
 
 //====================================================================================================
 // Functions
+
+void MadgwickAHRS_SetSampleFreq(float hz)
+{
+	if (hz <= 0.0f) {
+		// 保底，避免除零；保持原值
+		return;
+	}
+	g_sampleFreq = hz;
+	invSampleFreq = 1.0f / hz;
+}
 
 //---------------------------------------------------------------------------------------------------
 // AHRS algorithm update（含磁力计的完整融合）

@@ -14,6 +14,43 @@
 
 #define MPU6050_ADDRESS    0xD0
 
+// 配置：是否启用 DWT 测帧率与是否随串口发送性能数据
+#ifndef ENABLE_DWT_FPS
+#define ENABLE_DWT_FPS 1
+#endif
+#ifndef ENABLE_FRAME_RATE_TELEM
+#define ENABLE_FRAME_RATE_TELEM 1  // 0=仅发送姿态3浮点；1=发送5浮点(姿态+fps+dt_ms)
+// 姿态更新频率（Hz）：可按需提升到 200/250/500
+#ifndef POSE_UPDATE_HZ
+#define POSE_UPDATE_HZ 200
+#endif
+
+// 串口遥测降采样：每多少帧发送一次（1=每帧，2=1/2 频率等）
+#ifndef POSE_TELEM_DIV
+#define POSE_TELEM_DIV 4  // 在 200Hz 解算下 -> 50Hz 遥测
+#endif
+
+#endif
+
+#if ENABLE_DWT_FPS
+// DWT 相关静态状态
+static inline void DWT_Init(void)
+{
+	// 使能 DWT CYCCNT
+	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+	DWT->CYCCNT = 0;
+	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
+static inline uint32_t DWT_GetCycles(void)
+{
+	return DWT->CYCCNT;
+}
+#endif
+
+// 帧率统计（EMA 平滑）
+static float s_fps = 0.0f;
+static float s_dt_ms = 0.0f;
+
 int16_t AccX = 0, AccY = 0, AccZ = 0, GyroX = 0, GyroY = 0, GyroZ = 0;
 int16_t ax_off = 0, ay_off = 0, az_off = 0;
 int16_t gx_off = 0, gy_off = 0, gz_off = 0;
@@ -82,14 +119,31 @@ void MPU6050_Init(void)
 	// 配置姿态解算的三角函数近似模式（可选：TRIG_STD/TRIG_LUT/TRIG_POLY）
 	set_trig_approx_mode(TRIG_POLY);
 
+#if ENABLE_DWT_FPS
+	DWT_Init();
+#endif
+
 	MPU6050_WriteReg(MPU6050_PWR_MGMT_1, 0x01); // wake, set clock
 	MPU6050_WriteReg(MPU6050_PWR_MGMT_2, 0x00);
-	MPU6050_WriteReg(MPU6050_SMPLRT_DIV, 0x01);
+	/* 采样率：当 DLPF 开启时基准为 1kHz，采样率 = 1000/(1+SMPLRT_DIV)
+	 * 目标：尽量与姿态更新频率接近，减少别名效应。
+	 */
+	{
+		uint16_t target_sr = (POSE_UPDATE_HZ > 0) ? POSE_UPDATE_HZ : 100;
+		if (target_sr > 1000) target_sr = 1000; // 上限保护
+		uint16_t div = (1000 / target_sr);
+		if (div == 0) div = 1; // 目标频率>1000时
+		/* 采样率 = 1000/(1+div) -> 令 (1+div) ≈ 1000/target_sr */
+		if (div > 0) div -= 1;
+		if (div > 255) div = 255;
+		MPU6050_WriteReg(MPU6050_SMPLRT_DIV, (uint8_t)div);
+	}
 	MPU6050_WriteReg(MPU6050_CONFIG, 0x03);
 	MPU6050_WriteReg(MPU6050_GYRO_CONFIG, 0x18);
 	MPU6050_WriteReg(MPU6050_ACCEL_CONFIG, 0x00);
-    
-    
+	/* 配置 Madgwick 采样频率，与任务循环保持一致 */
+	MadgwickAHRS_SetSampleFreq((float)POSE_UPDATE_HZ);
+
     MPU6050_StartPoseTask();
 
 	MPU6050_SelfCorrect();
@@ -206,10 +260,17 @@ void MPU6050_SelfCorrect(void)
 static void vPoseUpdateTask(void *pvParameters)
 {
     (void)pvParameters;
-    TickType_t last = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(10); // 100 Hz
+	TickType_t last = xTaskGetTickCount();
+	TickType_t period = (configTICK_RATE_HZ / POSE_UPDATE_HZ);
+	if (period == 0) period = 1; // 保证至少 1 tick
+    
+#if ENABLE_DWT_FPS
+	static uint32_t prev_cc = 0;
+	prev_cc = DWT_GetCycles();
+#endif
 
-    for (;;)
+	uint32_t telem_cnt = 0;
+	for (;;)
     {
         if(!g_selfcorrect_finished) {
             vTaskDelay(period);
@@ -235,13 +296,41 @@ static void vPoseUpdateTask(void *pvParameters)
         roll  *= RAD2DEG;
         yaw   *= RAD2DEG;
 
-        //if(xShowTaskHandle != NULL)
-        //    xTaskNotifyGive(xShowTaskHandle);
-        
-        float aaa[3] = {pitch, roll, yaw};
-        Serial_SendJustFloat(aaa, 3);
+		// 帧率更新：用 DWT 先更新当前帧的 dt 与 fps
+	#if ENABLE_DWT_FPS
+		{
+		    uint32_t now = DWT_GetCycles();
+		    uint32_t diff = now - prev_cc; // 处理溢出按无符号减法
+		    prev_cc = now;
+		    // 将周期换算为毫秒与帧率
+		    float dt_s = (float)diff / (float)SystemCoreClock;
+		    s_dt_ms = dt_s * 1000.0f;
+		    float inst_fps = (dt_s > 0.0f) ? (1.0f / dt_s) : 0.0f;
+		    // 简单一阶 EMA 平滑
+		    const float alpha = 0.1f;
+		    s_fps = (s_fps <= 0.0f) ? inst_fps : (s_fps * (1.0f - alpha) + inst_fps * alpha);
+		}
+	#else
+		{
+		    // 无 DWT 时以期望周期估计
+		    s_dt_ms = (float)period * (1000.0f / (float)configTICK_RATE_HZ);
+		    s_fps = (s_dt_ms > 0.0f) ? (1000.0f / s_dt_ms) : 0.0f;
+		}
+	#endif
 
-        vTaskDelayUntil(&last, period);
+    	#if ENABLE_FRAME_RATE_TELEM
+    		if ((telem_cnt++ % POSE_TELEM_DIV) == 0) {
+    			float out5[5] = {pitch, roll, yaw, s_fps, s_dt_ms};
+    			Serial_SendJustFloat(out5, 5);
+    		}
+    	#else
+    		if ((telem_cnt++ % POSE_TELEM_DIV) == 0) {
+    			float out3[3] = {pitch, roll, yaw};
+    			Serial_SendJustFloat(out3, 3);
+    		}
+    	#endif
+
+		vTaskDelayUntil(&last, period);
 
     }
 }
