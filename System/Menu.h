@@ -12,9 +12,9 @@
 #include "OLED.h"
 
 
-#define KEY_Up (GPIO_Pin_8)        //PA8
-#define KEY_Down (GPIO_Pin_15)     //PB15
-#define KEY_Toggle (GPIO_Pin_14)     //PB14
+#define KEY_Up (GPIO_Pin_7)        //PA7
+#define KEY_Down (GPIO_Pin_1)      //PB1
+#define KEY_Toggle (GPIO_Pin_0)    //PB0
 
 #define Menu_thrd_correct_port (GPIO_Pin_12) //PB12用于启动input的thrd_correct
 

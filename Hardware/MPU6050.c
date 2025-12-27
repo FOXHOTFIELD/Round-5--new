@@ -28,6 +28,7 @@
 // 串口遥测降采样：每多少帧发送一次（1=每帧，2=1/2 频率等）
 #ifndef POSE_TELEM_DIV
 #define POSE_TELEM_DIV 4  // 在 200Hz 解算下 -> 50Hz 遥测
+
 #endif
 
 #endif

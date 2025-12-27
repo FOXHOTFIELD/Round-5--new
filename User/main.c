@@ -43,10 +43,8 @@ int main(void)
 
 	/* 初始化 */
 	OLED_Init();
-	OLED_ShowChar(0, 0, '1', OLED_6X8);
-	OLED_Update();
     Serial_Init();
-	//Menu_Init();
+	Menu_Init();
 	MPU6050_Init();
 
 

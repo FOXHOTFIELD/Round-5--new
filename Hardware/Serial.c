@@ -17,20 +17,20 @@ uint8_t Serial_RxFlag;
   */
 void Serial_Init(void)
 {
-	// 开启时钟
-	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
+	// 开启时钟（USART2 在 APB1）
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 	
 	// GPIO初始化
 	GPIO_InitTypeDef GPIO_InitStructure;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;		// PA9 TX
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;		// PA2 TX
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 	
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;		// PA10 RX
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;		// PA3 RX
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 	
@@ -42,11 +42,11 @@ void Serial_Init(void)
 	USART_InitStructure.USART_Parity = USART_Parity_No;
 	USART_InitStructure.USART_StopBits = USART_StopBits_1;
 	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
-	USART_Init(USART1, &USART_InitStructure);
+	USART_Init(USART2, &USART_InitStructure);
 	
-	// DMA TX 初始化
+	// DMA TX 初始化（USART2_TX -> DMA1_Channel7）
 	DMA_InitTypeDef DMA_InitStructure;
-	DMA_DeInit(DMA1_Channel4);
+	DMA_DeInit(DMA1_Channel7);
 	DMA_InitStructure.DMA_BufferSize = 0;
 	DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
 	DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
@@ -54,39 +54,39 @@ void Serial_Init(void)
 	DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
 	DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
 	DMA_InitStructure.DMA_Mode = DMA_Mode_Normal;
-	DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&USART1->DR;
+	DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&USART2->DR;
 	DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
 	DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
 	DMA_InitStructure.DMA_Priority = DMA_Priority_Medium;
-	DMA_Init(DMA1_Channel4, &DMA_InitStructure);
+	DMA_Init(DMA1_Channel7, &DMA_InitStructure);
 	
-	// DMA RX 初始化
-	DMA_DeInit(DMA1_Channel5);
+	// DMA RX 初始化（USART2_RX -> DMA1_Channel6）
+	DMA_DeInit(DMA1_Channel6);
 	DMA_InitStructure.DMA_BufferSize = 100;
 	DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
 	DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)Serial_RxBuffer;
 	DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;
-	DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&USART1->DR;
-	DMA_Init(DMA1_Channel5, &DMA_InitStructure);
-	DMA_Cmd(DMA1_Channel5, ENABLE);
+	DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&USART2->DR;
+	DMA_Init(DMA1_Channel6, &DMA_InitStructure);
+	DMA_Cmd(DMA1_Channel6, ENABLE);
 	
 	// 使能USART DMA
-	USART_DMACmd(USART1, USART_DMAReq_Tx | USART_DMAReq_Rx, ENABLE);
+	USART_DMACmd(USART2, USART_DMAReq_Tx | USART_DMAReq_Rx, ENABLE);
 	
-	// 使能USART1 IDLE中断
-	USART_ITConfig(USART1, USART_IT_IDLE, ENABLE);
+	// 使能USART2 IDLE中断
+	USART_ITConfig(USART2, USART_IT_IDLE, ENABLE);
 	
 	// 配置NVIC
 	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
 	NVIC_InitTypeDef NVIC_InitStructure;
-	NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
 	NVIC_Init(&NVIC_InitStructure);
 	
 	// 使能USART
-	USART_Cmd(USART1, ENABLE);
+	USART_Cmd(USART2, ENABLE);
 }
 
 /**
@@ -96,8 +96,8 @@ void Serial_Init(void)
   */
 void Serial_SendByte(uint8_t Byte)
 {
-	USART_SendData(USART1, Byte);
-	while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
+	USART_SendData(USART2, Byte);
+	while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
 }
 
 /**
@@ -108,12 +108,12 @@ void Serial_SendByte(uint8_t Byte)
   */
 void Serial_SendArray(uint8_t *Array, uint16_t Length)
 {
-	DMA_Cmd(DMA1_Channel4, DISABLE);
-	DMA1_Channel4->CNDTR = Length;
-	DMA1_Channel4->CMAR = (uint32_t)Array;
-	DMA_Cmd(DMA1_Channel4, ENABLE);
-	while(DMA_GetFlagStatus(DMA1_FLAG_TC4) == RESET);
-	DMA_ClearFlag(DMA1_FLAG_TC4);
+	DMA_Cmd(DMA1_Channel7, DISABLE);
+	DMA1_Channel7->CNDTR = Length;
+	DMA1_Channel7->CMAR = (uint32_t)Array;
+	DMA_Cmd(DMA1_Channel7, ENABLE);
+	while(DMA_GetFlagStatus(DMA1_FLAG_TC7) == RESET);
+	DMA_ClearFlag(DMA1_FLAG_TC7);
 }
 
 /**
@@ -230,14 +230,14 @@ void Serial_SendJustFloat(float *data, uint16_t num)
   *         函数名为预留的指定名称，可以从启动文件复制
   *         请确保函数名正确，不能有任何差异，否则中断函数将不能进入
   */
-void USART1_IRQHandler(void)
+void USART2_IRQHandler(void)
 {
-	if (USART_GetITStatus(USART1, USART_IT_IDLE) == SET)
+	if (USART_GetITStatus(USART2, USART_IT_IDLE) == SET)
 	{
-		Serial_RxLength = 100 - DMA_GetCurrDataCounter(DMA1_Channel5);
+		Serial_RxLength = 100 - DMA_GetCurrDataCounter(DMA1_Channel6);
 		Serial_RxFlag = 1;
-		USART_ReceiveData(USART1); // 清除IDLE标志
-		USART_ClearITPendingBit(USART1, USART_IT_IDLE);
+		USART_ReceiveData(USART2); // 清除IDLE标志
+		USART_ClearITPendingBit(USART2, USART_IT_IDLE);
 	}
 }
 
