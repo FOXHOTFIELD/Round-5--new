@@ -1,0 +1,141 @@
+// 编码器(旋转式)读取实现 - 使用 PA0(A通道) 与 PA1(B通道)
+// 基于 TIM2 编码器接口模式（硬件正交解码），替代原 EXTI 查表方案
+// 说明：
+// - TIM2 作为正交解码计数器，硬件完成边沿采样与方向判断，CPU 占用更低、抗抖更好。
+// - 由于 STM32F103C8 的 TIM2 计数器为 16 位，驱动通过更新中断做 32 位软件扩展。
+
+#include "Encoder.h"
+#include "stm32f10x_gpio.h"
+#include "stm32f10x_rcc.h"
+#include "stm32f10x_tim.h"
+#include "misc.h"
+
+/*
+ * 集成说明（与 stm32f10x_it.c 的关系）：
+ * - 不需要修改 stm32f10x_it.h。
+ * - 请在 stm32f10x_it.c 中提供 TIM2 的中断服务：
+ *     void TIM2_IRQHandler(void) { Encoder_TIM2_IRQHandler(); }
+ *   或者在该文件中直接定义 TIM2_IRQHandler（不推荐，统一集中 ISR 更清晰）。
+ */
+
+// ---------------- 引脚与外设定义（可按需调整） ----------------
+#define ENC_GPIO            GPIOA               // 编码器所在端口
+#define ENC_GPIO_RCC        RCC_APB2Periph_GPIOA// 端口时钟
+#define ENC_CH_A            GPIO_Pin_0          // A 通道 -> PA0
+#define ENC_CH_B            GPIO_Pin_1          // B 通道 -> PA1
+// 定时器选择
+#define ENC_TIM             TIM2
+#define ENC_TIM_RCC         RCC_APB1Periph_TIM2
+
+// 32 位扩展：以 16 位 CNT 为低 16 位，溢出/下溢在更新中断中累加高位
+static volatile int32_t s_ext_count_high = 0; // 以 65536 为步长的高位累计
+
+// 初始化：开启端口时钟，配置 PA0/PA1 为输入，上拉/悬空按传感器而定；配置 TIM2 为编码器模式
+void Encoder_Init(void)
+{
+	// 时钟：GPIOA、AFIO、TIM2
+	RCC_APB2PeriphClockCmd(ENC_GPIO_RCC | RCC_APB2Periph_AFIO, ENABLE);
+	RCC_APB1PeriphClockCmd(ENC_TIM_RCC, ENABLE);
+
+	// GPIO：PA0/PA1 输入；若传感器开漏输出建议上拉输入
+	GPIO_InitTypeDef gpio;
+	gpio.GPIO_Pin   = ENC_CH_A | ENC_CH_B;
+	gpio.GPIO_Mode  = GPIO_Mode_IPU; // 上拉输入（可按需改为 GPIO_Mode_IN_FLOATING）
+	gpio.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(ENC_GPIO, &gpio);
+
+	// 定时器基础配置
+	TIM_TimeBaseInitTypeDef tb;
+	TIM_TimeBaseStructInit(&tb);
+	tb.TIM_Prescaler         = 0;          // 不分频，捕获全部边沿
+	tb.TIM_Period            = 0xFFFF;     // 16 位计数器最大值
+	tb.TIM_ClockDivision     = TIM_CKD_DIV1;
+	tb.TIM_CounterMode       = TIM_CounterMode_Up; // 编码器模式下方向由硬件控制
+	TIM_TimeBaseInit(ENC_TIM, &tb);
+
+	// 编码器接口：TI1+TI2，双通道，X4 计数；上升沿为例（根据接线可改）
+	TIM_EncoderInterfaceConfig(ENC_TIM,
+		TIM_EncoderMode_TI12,
+		TIM_ICPolarity_Rising,
+		TIM_ICPolarity_Rising);
+
+	// 输入滤波：ICFilter 0..15，数值越大滤波越强，响应越慢；经验 6~10
+	TIM_ICInitTypeDef ic;
+	TIM_ICStructInit(&ic);
+	ic.TIM_ICFilter = 10;
+	ic.TIM_Channel  = TIM_Channel_1; TIM_ICInit(ENC_TIM, &ic);
+	ic.TIM_Channel  = TIM_Channel_2; TIM_ICInit(ENC_TIM, &ic);
+
+	// 清计数与高位扩展
+	TIM_SetCounter(ENC_TIM, 0);
+	s_ext_count_high = 0;
+
+	// 使能更新中断用于 32 位扩展，并配置 NVIC
+	TIM_ClearITPendingBit(ENC_TIM, TIM_IT_Update);
+	TIM_ITConfig(ENC_TIM, TIM_IT_Update, ENABLE);
+
+	NVIC_InitTypeDef nvic;
+	nvic.NVIC_IRQChannel = TIM2_IRQn;
+	nvic.NVIC_IRQChannelPreemptionPriority = 2;
+	nvic.NVIC_IRQChannelSubPriority        = 2;
+	nvic.NVIC_IRQChannelCmd                = ENABLE;
+	NVIC_Init(&nvic);
+
+	// 启动计数
+	TIM_Cmd(ENC_TIM, ENABLE);
+}
+
+// 轮询接口在 TIM 方案下不必需；保留为空以兼容旧调用
+void Encoder_Update(void)
+{
+}
+
+// 原子读 32 位计数：禁用 TIM2 中断，组合高位与 CNT 后恢复
+int32_t Encoder_GetCount(void)
+{
+	int32_t high;
+	uint16_t low;
+	NVIC_DisableIRQ(TIM2_IRQn);
+	high = s_ext_count_high;
+	low  = (uint16_t)TIM_GetCounter(ENC_TIM);
+	NVIC_EnableIRQ(TIM2_IRQn);
+	return (high << 16) | low;
+}
+
+// 设置/重置累计计数（例如清零）
+void Encoder_SetCount(int32_t count)
+{
+	NVIC_DisableIRQ(TIM2_IRQn);
+	s_ext_count_high = (count >> 16);
+	TIM_SetCounter(ENC_TIM, (uint16_t)(count & 0xFFFF));
+	NVIC_EnableIRQ(TIM2_IRQn);
+}
+
+// 返回当前累计计数并清零，便于按固定周期统计转速
+int32_t Encoder_GetAndReset(void)
+{
+	int32_t val = Encoder_GetCount();
+	Encoder_SetCount(0);
+	return val;
+}
+
+// -------------------- 驱动内的 TIM2 更新中断处理入口（供向量表转发调用） --------------------
+void Encoder_TIM2_IRQHandler(void)
+{
+	if (TIM_GetITStatus(ENC_TIM, TIM_IT_Update) != RESET)
+	{
+		// 根据当前计数方向判定是上溢(+65536)还是下溢(-65536)
+		if ((ENC_TIM->CR1 & TIM_CR1_DIR) == 0)
+		{
+			// 向上计数，上溢
+			s_ext_count_high += 1;
+		}
+		else
+		{
+			// 向下计数，下溢
+			s_ext_count_high -= 1;
+		}
+		TIM_ClearITPendingBit(ENC_TIM, TIM_IT_Update);
+	}
+}
+

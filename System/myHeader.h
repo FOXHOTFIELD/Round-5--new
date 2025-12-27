@@ -13,6 +13,7 @@
 #include "MPU6050.h"
 #include "MadgwickAHRS.h"
 #include "SoftI2C.h"
+#include "Encoder.h"
 
 #include <stdint.h>
 #include <stdbool.h>

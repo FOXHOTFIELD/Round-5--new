@@ -7,6 +7,8 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f10x_it.h"
+/* 编码器 TIM2 更新中断转发入口（避免修改头文件，这里声明 extern） */
+extern void Encoder_TIM2_IRQHandler(void);
 
 /* include FreeRTOS headers so we can call the port systick handler */
 #include "FreeRTOS.h"
@@ -83,11 +85,15 @@ void DebugMon_Handler(void)
 /* 示例：外设中断处理模板（按需实现） */
 void EXTI0_IRQHandler(void)
 {
-    /* 处理 EXTI0 中断（示例）：
-       - 检查并清中断挂起位（按寄存器/StdPeriph 库方式）
-       - 如果在 ISR 中使用 FreeRTOS FromISR API（如 xQueueSendFromISR），
-         请确保中断优先级符合 configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 的限制，
-         并在必要时调用 portYIELD_FROM_ISR( xHigherPriorityTaskWoken ); */
+}
+
+void EXTI1_IRQHandler(void)
+{
+}
+
+void TIM2_IRQHandler(void)
+{
+  Encoder_TIM2_IRQHandler();
 }
 
 /* 其他外设中断按需添加 */
