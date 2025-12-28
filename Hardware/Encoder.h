@@ -3,6 +3,10 @@
 
 #pragma once
 
+#ifndef __ENCODER_H
+#define __ENCODER_H
+
+
 #include <stdint.h>
 
 // 初始化编码器引脚：PA0/PA1 设为上拉输入
@@ -21,3 +25,4 @@ void Encoder_SetCount(int32_t count);
 // 典型用法：在周期任务中调用该函数得到 Δcnt；结合周期时长与每圈脉冲数计算转速
 int32_t Encoder_GetAndReset(void);
 
+#endif
