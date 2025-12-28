@@ -858,6 +858,31 @@
             </File>
           </Files>
         </Group>
+        <Group>
+          <GroupName>Motor</GroupName>
+          <Files>
+            <File>
+              <FileName>Encoder.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\Encoder.h</FilePath>
+            </File>
+            <File>
+              <FileName>Enocder.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\Enocder.c</FilePath>
+            </File>
+            <File>
+              <FileName>MotorDrive.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\MotorDrive.c</FilePath>
+            </File>
+            <File>
+              <FileName>MotorDrive.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\MotorDrive.h</FilePath>
+            </File>
+          </Files>
+        </Group>
       </Groups>
     </Target>
   </Targets>
