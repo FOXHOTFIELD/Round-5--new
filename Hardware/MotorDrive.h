@@ -45,10 +45,10 @@ enum Motor_Mode
 };
 
 /* 电机状态结构体：Speed 为理论最大速度的百分比（支持小数，-100.00..100.00） */
-typedef struct
+typedef struct Motor_Status
 {
 	enum Motor_Mode Mode;   /* 当前模式 */
-	float           Speed;  /* 速度百分比（可带小数，-100.00..100.00；负数为反转） */
+	float           SpeedInPercent;  /* 速度百分比（可带小数，-100.00..100.00；负数为反转） */
 } Motor_Status;
 
 
