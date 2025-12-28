@@ -134,3 +134,32 @@ void Encoder_TIM2_IRQHandler(void)
 	}
 }
 
+// 将原始计数（脉冲数/周期）映射为百分比 -100.00 .. 100.00
+static float Encoder_RawToPercent(int32_t raw)
+{
+	const int32_t MAX_RAW = 3765;
+	if (raw > MAX_RAW) raw = MAX_RAW;
+	if (raw < -MAX_RAW) raw = -MAX_RAW;
+
+	// 使用整数计算保留两位小数：p100 = round(raw * 10000 / MAX_RAW)
+	int64_t numer = (int64_t)raw * 10000LL;
+	int64_t adj = (raw >= 0) ? (MAX_RAW / 2) : -(MAX_RAW / 2);
+	int32_t p100 = (int32_t)((numer + adj) / MAX_RAW);
+
+	return (float)p100 / 100.0f;
+}
+
+// 读取当前累计计数并返回映射的百分比（不清零）
+float Encoder_GetCountPercent(void)
+{
+	int32_t cnt = Encoder_GetCount();
+	return Encoder_RawToPercent(cnt);
+}
+
+// 读取并清零累计计数，返回映射后的百分比
+float Encoder_GetAndResetPercent(void)
+{
+	int32_t cnt = Encoder_GetAndReset();
+	return Encoder_RawToPercent(cnt);
+}
+

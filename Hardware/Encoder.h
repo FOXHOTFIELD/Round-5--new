@@ -25,4 +25,10 @@ void Encoder_SetCount(int32_t count);
 // 典型用法：在周期任务中调用该函数得到 Δcnt；结合周期时长与每圈脉冲数计算转速
 int32_t Encoder_GetAndReset(void);
 
+// 读取当前累计计数并映射为百分比 -100.00 .. 100.00（保留两位小数）
+float Encoder_GetCountPercent(void);
+
+// 返回当前累计计数映射的百分比并清零计数（便于周期统计）
+float Encoder_GetAndResetPercent(void);
+
 #endif
