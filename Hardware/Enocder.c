@@ -85,11 +85,6 @@ void Encoder_Init(void)
 	TIM_Cmd(ENC_TIM, ENABLE);
 }
 
-// 轮询接口在 TIM 方案下不必需；保留为空以兼容旧调用
-void Encoder_Update(void)
-{
-}
-
 // 原子读 32 位计数：禁用 TIM2 中断，组合高位与 CNT 后恢复
 int32_t Encoder_GetCount(void)
 {
