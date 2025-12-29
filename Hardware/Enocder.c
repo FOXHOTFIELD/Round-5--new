@@ -143,7 +143,7 @@ void Encoder_TIM2_IRQHandler(void)
 // 将原始计数（脉冲数/周期）映射为百分比 -100.00 .. 100.00
 static float Encoder_RawToPercent(int32_t raw)
 {
-	const int32_t MAX_RAW = 3765;
+	const int32_t MAX_RAW = 15725;
 	if (raw > MAX_RAW) raw = MAX_RAW;
 	if (raw < -MAX_RAW) raw = -MAX_RAW;
 
@@ -175,6 +175,7 @@ static void vEncoderTask(void *pv)
 
 	for(;;)
 	{
+		//float pct = Encoder_GetAndResetPercent();
 		float pct = Encoder_GetAndResetPercent();
 		/* 写入共享 encoder 值，vCommTask 会合并发送 */
 		Comm_encoder = pct;
