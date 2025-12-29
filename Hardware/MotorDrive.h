@@ -60,6 +60,6 @@ void Motor_SetMode(int numMotor, enum Motor_Mode Mode);
 void Motor_SetPWM(uint8_t index, int16_t PWM);
 /* 统一映射：按速度百分比设置（支持 xx.xx%；-100..100），自动映射到 CCR */
 void Motor_SetSpeedPercent(uint8_t index, float percent);
-void STBY_cmd(FunctionalState NewState);
+void MPU6050_SetStandbyState(FunctionalState NewState);
 
 #endif /* __MOTORDRIVE_H_ */

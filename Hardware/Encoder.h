@@ -6,8 +6,19 @@
 #ifndef __ENCODER_H
 #define __ENCODER_H
 
+#include "stm32f10x_gpio.h"
+#include "stm32f10x_rcc.h"
+#include "stm32f10x_tim.h"
+#include "misc.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
 
 #include <stdint.h>
+
+#include "comm.h"
+#include "filter.h"
 
 // 初始化编码器引脚：PA0/PA1 设为上拉输入
 void Encoder_Init(void);

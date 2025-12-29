@@ -1,16 +1,4 @@
-#include "stm32f10x.h"
-#include "MPU6050_Reg.h"
 #include "MPU6050.h"
-#include "softi2c.h"
-#include "OLED.h"
-#include "Delay.h"
-#include "MadgwickAHRS.h"
-#include <stdlib.h>
-#include "Serial.h"
-
-#include "FreeRTOS.h"
-#include "portmacro.h"
-#include "task.h"
 
 #define MPU6050_ADDRESS    0xD0
 
@@ -33,24 +21,9 @@
 
 #endif
 
-#if ENABLE_DWT_FPS
-// DWT 相关静态状态
-static inline void DWT_Init(void)
-{
-	// 使能 DWT CYCCNT
-	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-	DWT->CYCCNT = 0;
-	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-}
-static inline uint32_t DWT_GetCycles(void)
-{
-	return DWT->CYCCNT;
-}
-#endif
+static void vPoseUpdateTask(void *pvParameters);
 
-// 帧率统计（EMA 平滑）
-static float s_fps = 0.0f;
-static float s_dt_ms = 0.0f;
+/* DWT 帧率计算已移至 main.c 的独立任务 vDWTTask */
 
 int16_t AccX = 0, AccY = 0, AccZ = 0, GyroX = 0, GyroY = 0, GyroZ = 0;
 int16_t ax_off = 0, ay_off = 0, az_off = 0;
@@ -120,9 +93,7 @@ void MPU6050_Init(void)
 	// 配置姿态解算的三角函数近似模式（可选：TRIG_STD/TRIG_LUT/TRIG_POLY）
 	set_trig_approx_mode(TRIG_POLY);
 
-#if ENABLE_DWT_FPS
-	DWT_Init();
-#endif
+	/* DWT 初始化与帧率计算由 main 中的 vDWTTask 负责 */
 
 	MPU6050_WriteReg(MPU6050_PWR_MGMT_1, 0x01); // wake, set clock
 	MPU6050_WriteReg(MPU6050_PWR_MGMT_2, 0x00);
@@ -265,14 +236,8 @@ static void vPoseUpdateTask(void *pvParameters)
 	TickType_t period = (configTICK_RATE_HZ / POSE_UPDATE_HZ);
 	if (period == 0) period = 1; // 保证至少 1 tick
     
-#if ENABLE_DWT_FPS
-	static uint32_t prev_cc = 0;
-	prev_cc = DWT_GetCycles();
-#endif
-
-	uint32_t telem_cnt = 0;
 	for (;;)
-    {
+	{
         if(!g_selfcorrect_finished) {
             vTaskDelay(period);
             continue;
@@ -297,39 +262,10 @@ static void vPoseUpdateTask(void *pvParameters)
         roll  *= RAD2DEG;
         yaw   *= RAD2DEG;
 
-		// 帧率更新：用 DWT 先更新当前帧的 dt 与 fps
-	#if ENABLE_DWT_FPS
-		{
-		    uint32_t now = DWT_GetCycles();
-		    uint32_t diff = now - prev_cc; // 处理溢出按无符号减法
-		    prev_cc = now;
-		    // 将周期换算为毫秒与帧率
-		    float dt_s = (float)diff / (float)SystemCoreClock;
-		    s_dt_ms = dt_s * 1000.0f;
-		    float inst_fps = (dt_s > 0.0f) ? (1.0f / dt_s) : 0.0f;
-		    // 简单一阶 EMA 平滑
-		    const float alpha = 0.1f;
-		    s_fps = (s_fps <= 0.0f) ? inst_fps : (s_fps * (1.0f - alpha) + inst_fps * alpha);
-		}
-	#else
-		{
-		    // 无 DWT 时以期望周期估计
-		    s_dt_ms = (float)period * (1000.0f / (float)configTICK_RATE_HZ);
-		    s_fps = (s_dt_ms > 0.0f) ? (1000.0f / s_dt_ms) : 0.0f;
-		}
-	#endif
-
-    	#if ENABLE_FRAME_RATE_TELEM
-    		if ((telem_cnt++ % POSE_TELEM_DIV) == 0) {
-    			float out5[5] = {pitch, roll, yaw, s_fps, s_dt_ms};
-    			Serial_SendJustFloat(out5, 5);
-    		}
-    	#else
-    		if ((telem_cnt++ % POSE_TELEM_DIV) == 0) {
-    			float out3[3] = {pitch, roll, yaw};
-    			Serial_SendJustFloat(out3, 3);
-    		}
-    	#endif
+		/* 写入共享最新姿态值，帧率/周期(ms)由 main 中的 vDWTTask 更新 */
+		Comm_pitch = pitch;
+		Comm_roll = roll;
+		Comm_yaw = yaw;
 
 		vTaskDelayUntil(&last, period);
 

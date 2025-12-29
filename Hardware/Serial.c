@@ -1,9 +1,9 @@
-#include "MyHeader.h"
 #include "Serial.h"
+
+#include "stm32f10x_dma.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
-#include "stm32f10x_dma.h"
 
 // 接收缓冲区和标志位
 uint8_t Serial_RxBuffer[100];

@@ -3,6 +3,20 @@
 #ifndef __MPU6050_H
 #define __MPU6050_H
 
+#include "stm32f10x.h"
+#include "MPU6050_Reg.h"
+#include "softi2c.h"
+#include "OLED.h"
+#include "Delay.h"
+#include "MadgwickAHRS.h"
+#include "comm.h"
+
+#include <stdlib.h>
+
+#include "FreeRTOS.h"
+#include "portmacro.h"
+#include "task.h"
+
 void MPU6050_WriteReg(uint8_t RegAddress, uint8_t Data);
 uint8_t MPU6050_ReadReg(uint8_t RegAddress);
 

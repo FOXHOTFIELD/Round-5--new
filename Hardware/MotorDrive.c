@@ -5,7 +5,7 @@
 #include "misc.h"
 
 /* STBY 控制辅助（ENABLE=高，DISABLE=低） */
-void STBY_cmd(FunctionalState NewState)
+void MPU6050_SetStandbyState(FunctionalState NewState)
 {
     if (NewState == ENABLE)
     {
@@ -93,7 +93,7 @@ void MD_Init(void)
     GPIO_IS.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(STBY_GPIO, &GPIO_IS);
 
-    STBY_cmd(DISABLE);
+    MPU6050_SetStandbyState(DISABLE);
 
 
 }

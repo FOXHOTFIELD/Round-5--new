@@ -17,8 +17,8 @@ uint8_t Flag = 0;
 static TaskHandle_t xMenuShowHandle = NULL; // 菜单显示任务句柄，用于接收通知唤醒刷新
 volatile BaseType_t oled_update_blocked = pdFALSE; // 当某些操作需要临时阻止自动刷新时置位
 
-static void vMenu_ShowTask(void* pv);
-static void vMenuTask(void *pv);
+void vMenu_ShowTask(void* pv);
+void vMenuTask(void *pv);
 static void Menu_DrawItem(void);
 static void Menu_DrawCursor(void);
 static void Menu_ShowDebug(void);
@@ -91,20 +91,18 @@ void Menu_Init(void)
 {
     // 初始化按键硬件与事件队列（从 MenuKeys 模块）
     MenuKeys_Init();
+    /* 在此创建菜单相关任务，便于模块自包含初始化 */
+    (void)xTaskCreate(vMenuTask, "MenuTask", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
+    TaskHandle_t hMenuShow = NULL;
+    (void)xTaskCreate(vMenu_ShowTask, "MenuShow", 256, NULL, tskIDLE_PRIORITY + 1, &hMenuShow);
+    Menu_SetShowHandle(hMenuShow);
+    if (hMenuShow != NULL)
+        xTaskNotifyGive(hMenuShow); /* 初始通知，刷新首次界面 */
+}
 
-    BaseType_t xRes = xTaskCreate(vMenuTask, "MenuTask", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
-    if (xRes != pdPASS)
-
-        return;
-
-    if (xMenuShowHandle == NULL) {
-        xTaskCreate(vMenu_ShowTask, "MenuShow", 256, NULL, tskIDLE_PRIORITY + 1, &xMenuShowHandle);
-    }
-
-    // 给一次初始通知，让显示任务把初始值绘制到屏幕
-    if (xMenuShowHandle != NULL) {
-        xTaskNotifyGive(xMenuShowHandle);
-    }
+void Menu_SetShowHandle(TaskHandle_t h)
+{
+    xMenuShowHandle = h;
 }
 
 /**
@@ -116,7 +114,7 @@ void Menu_Init(void)
  * 返回：此函数不会返回（任务循环）
  */
 
-static void vMenuTask(void *pv)
+void vMenuTask(void *pv)
 {
     KeyEvent_t ev;
     for(;;)
@@ -157,7 +155,7 @@ static void vMenuTask(void *pv)
  * 参数：`pv` - 任务参数（未使用）
  * 返回：此函数不会返回（任务循环）
  */
-static void vMenu_ShowTask(void* pv)
+void vMenu_ShowTask(void* pv)
 {
     (void) pv;
 

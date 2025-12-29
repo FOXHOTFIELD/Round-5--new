@@ -5,10 +5,6 @@
 // - 由于 STM32F103C8 的 TIM2 计数器为 16 位，驱动通过更新中断做 32 位软件扩展。
 
 #include "Encoder.h"
-#include "stm32f10x_gpio.h"
-#include "stm32f10x_rcc.h"
-#include "stm32f10x_tim.h"
-#include "misc.h"
 
 /*
  * 集成说明（与 stm32f10x_it.c 的关系）：
@@ -27,8 +23,13 @@
 #define ENC_TIM             TIM2
 #define ENC_TIM_RCC         RCC_APB1Periph_TIM2
 
+/* 速度低通滤波器状态（用于 butterworth2_init/process）*/
+static FilterBiquad speed_lp;
+
 // 32 位扩展：以 16 位 CNT 为低 16 位，溢出/下溢在更新中断中累加高位
 static volatile int32_t s_ext_count_high = 0; // 以 65536 为步长的高位累计
+
+static void vEncoderTask(void *pv);
 
 // 初始化：开启端口时钟，配置 PA0/PA1 为输入，上拉/悬空按传感器而定；配置 TIM2 为编码器模式
 void Encoder_Init(void)
@@ -83,6 +84,11 @@ void Encoder_Init(void)
 
 	// 启动计数
 	TIM_Cmd(ENC_TIM, ENABLE);
+
+	butterworth2_init(&speed_lp, 10.0f, 50.0f);
+
+	/* 创建编码器后台任务，周期性读取并更新共享值 */
+	(void)xTaskCreate(vEncoderTask, "Encoder", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
 }
 
 // 原子读 32 位计数：禁用 TIM2 中断，组合高位与 CNT 后恢复
@@ -163,3 +169,15 @@ float Encoder_GetAndResetPercent(void)
 	return Encoder_RawToPercent(cnt);
 }
 
+static void vEncoderTask(void *pv)
+{
+    (void) pv;
+
+	for(;;)
+	{
+		float pct = Encoder_GetAndResetPercent();
+		/* 写入共享 encoder 值，vCommTask 会合并发送 */
+		Comm_encoder = pct;
+		vTaskDelay(pdMS_TO_TICKS(100));
+	}
+}
