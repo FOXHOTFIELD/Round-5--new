@@ -46,7 +46,7 @@ void PID_Reset(PID_Status *status)
 	status->last_output = 0.0f; /* 原始控制量（未叠加偏置） */
 }
 
-void PID_AttachMotor(PID_Status *status, Motor_Status *motor)
+void PID_AttachMotor(PID_Status *status, Motor_Status_t *motor)
 {
 	/*
 	 * 绑定电机状态指针（可选）。

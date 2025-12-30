@@ -5,7 +5,7 @@
 #ifndef TEST
 #define LEDtest
 /* 从 Menu.c 导出菜单状态（在 Menu.c 中定义） */
-extern MenuStatus Menu_Status;
+extern MenuStatus_t Menu_Status;
 
 #ifdef LEDtest
 /* LED 监控任务：当 Menu_Status.Cursor_Index == 1 时点亮 PC13，否则熄灭 */
@@ -48,7 +48,7 @@ int main(void)
 	Comm_Init();
 
     Motor_SetSpeedPercent(1, 99.9);
-    MPU6050_SetStandbyState(DISABLE);
+    Motor_SetStandbyState(DISABLE);
 
     #ifdef LEDtest
         /* 使能 GPIOC 时钟并配置 PC13 为推挽输出 */
@@ -92,7 +92,7 @@ int main(void)
     Encoder_Init();
     MD_Init();
 
-    MPU6050_SetStandbyState(ENABLE);
+    Motor_SetStandbyState(ENABLE);
 	/* 使用更高占空比，以 ARR=10000 的尺度为参考 */
 
     uint8_t flag = 0;

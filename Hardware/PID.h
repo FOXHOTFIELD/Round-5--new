@@ -1,7 +1,10 @@
+#include "MotorDrive.h"
+
 #pragma once
 
 #ifndef __PID_H
 #define __PID_H
+
 
 
 typedef struct PID_Config
@@ -19,13 +22,13 @@ typedef struct PID_Config
 	float OutOffset;
 }PID_Config;
 
-/* 前向声明：与电机驱动中的状态结构保持一致 */
-typedef struct Motor_Status Motor_Status;
+///* 前向声明：与电机驱动中的状态结构保持一致 */
+//typedef struct Motor_Status_t Motor_Status_t;
 
 typedef struct PID_Status
 {
     float Target;
-	Motor_Status *motor_status;
+	Motor_Status_t *motor_status;
 	float Error;
 
 	/* 增量式 PID 需要保存历史误差与上一周期输出 */
@@ -36,7 +39,7 @@ typedef struct PID_Status
 
 /* 接口声明：增量式 PID 控制（速度） */
 void PID_Reset(PID_Status *status);
-void PID_AttachMotor(PID_Status *status, Motor_Status *motor);
+void PID_AttachMotor(PID_Status *status, Motor_Status_t *motor);
 void PID_SetTarget(PID_Status *status, float target);
 /*
  * 增量式 PID 计算一步控制量

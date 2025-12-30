@@ -86,8 +86,6 @@ void Comm_Init(void)
     }
     /* 创建任务：DWT 优先级略高以保证频率测量稳定 */
     if (xTaskCreate(vDWTTask, "DWT", 256, NULL, tskIDLE_PRIORITY + 3, NULL) != pdPASS) {
-        extern uint8_t Menu_Flag;
-        Menu_Flag = 1;
     }
     xTaskCreate(vCommTask, "Comm", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
 }

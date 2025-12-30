@@ -1,11 +1,9 @@
 #include "MotorDrive.h"
-#include "stm32f10x_gpio.h"
-#include "stm32f10x_rcc.h"
-#include "stm32f10x_tim.h"
-#include "misc.h"
+
+Motor_STBY_t Motor_STBY = Disable;
 
 /* STBY 控制辅助（ENABLE=高，DISABLE=低） */
-void MPU6050_SetStandbyState(FunctionalState NewState)
+void Motor_SetStandbyState(FunctionalState NewState)
 {
     if (NewState == ENABLE)
     {
@@ -17,9 +15,12 @@ void MPU6050_SetStandbyState(FunctionalState NewState)
         /* 置低：写 BSRR 高 16 位 */
         STBY_GPIO->BSRR = (uint32_t)STBY_PIN << 16;
     }
+    
+    Motor_STBY = (Motor_STBY_t) NewState;
+
 }
 
-Motor_Status motor_status[2] =
+Motor_Status_t motor_status[2] =
 {
     {.Mode = Motor_Mode_break, .SpeedInPercent = 0.0f},
     {.Mode = Motor_Mode_break, .SpeedInPercent = 0.0f}
@@ -93,7 +94,7 @@ void MD_Init(void)
     GPIO_IS.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(STBY_GPIO, &GPIO_IS);
 
-    MPU6050_SetStandbyState(DISABLE);
+    Motor_SetStandbyState(DISABLE);
 
 
 }
@@ -124,7 +125,7 @@ void Motor2_SetCompare(uint16_t Compare)
     TIM1->CCR4 = Compare;
 }
 
-void Motor_SetMode(int numMotor, enum Motor_Mode Mode)
+void Motor_SetMode(int numMotor, enum Motor_Mode_t Mode)
 {
     if(numMotor == 1){
         switch (Mode)
