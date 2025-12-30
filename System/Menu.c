@@ -2,7 +2,7 @@
 #include "MenuKeys.h"
 #include <string.h>
 
-uint8_t Flag = 0;
+uint8_t Menu_Flag = 0;
 
 /* 功能概要:
  * - 菜单状态管理：定义并初始化 `Menu_Status`（光标与页面索引）。
@@ -14,7 +14,7 @@ uint8_t Flag = 0;
  */
 
 // 菜单相关全局（用于与按键模块协同）
-static TaskHandle_t xMenuShowHandle = NULL; // 菜单显示任务句柄，用于接收通知唤醒刷新
+TaskHandle_t xMenuShowHandle = NULL; // 菜单显示任务句柄，用于接收通知唤醒刷新
 volatile BaseType_t oled_update_blocked = pdFALSE; // 当某些操作需要临时阻止自动刷新时置位
 
 void vMenu_ShowTask(void* pv);
@@ -31,7 +31,7 @@ const MenuItem MenuItem_Main_Run = {
     .Funcs = {
         .Func_Up_Down = NULL,
         .Func_Toggle = NULL,
-        .Func_Toggle_Long = NULL
+        .Func_Toggle_Long = Menu_MoveItem,
     },
     .Page_Index = Main_Run,
     .OptionCount = 1,
@@ -140,6 +140,8 @@ void vMenuTask(void *pv)
 
         if (Func != NULL)
             Func(ev);
+        
+        Menu_Flag = 1;
 
         if (xMenuShowHandle != NULL)
             xTaskNotifyGive(xMenuShowHandle);
@@ -163,10 +165,7 @@ void vMenu_ShowTask(void* pv)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        if (oled_update_blocked == pdTRUE)
-            continue;
-
-        OLED_Clear();
+        //OLED_Clear();
 
         Menu_DrawItem();
         Menu_DrawCursor();

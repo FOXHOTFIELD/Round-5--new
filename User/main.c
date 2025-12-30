@@ -3,7 +3,7 @@
 //#define TEST
 
 #ifndef TEST
-
+#define LEDtest
 /* 从 Menu.c 导出菜单状态（在 Menu.c 中定义） */
 extern MenuStatus Menu_Status;
 
@@ -12,11 +12,11 @@ extern MenuStatus Menu_Status;
 static void vLedMonitorTask(void *pvParameters)
 {
 	(void)pvParameters;
-    extern uint8_t Flag;
+    extern uint8_t Menu_Flag;
 	for (;;)
 	{
 		/* PC13 在多数板子上为低电平点亮，故当 Cursor_Index==1 时输出低电平（ResetBits） */
-		if (Flag == 1)
+		if (Menu_Flag != 1)
 		{
 			GPIO_ResetBits(GPIOC, GPIO_Pin_13); /* 点亮 */
 		}
@@ -28,24 +28,6 @@ static void vLedMonitorTask(void *pvParameters)
 	}
 }
 #endif
-/* 按键监听任务：响应 Menu_GetKeyEvent 的 Toggle 事件，切换电机 STBY */
-static void vKeyMonitorTask(void *pvParameters)
-{
-	(void)pvParameters;
-	KeyEvent_t ev;
-	for (;;) {
-		ev = Menu_GetKeyEvent(portMAX_DELAY);
-		if (ev == KEY_EVENT_Toggle) {
-			/* 读取当前 STBY 引脚输出状态，若为高则认为已 ENABLE */
-			uint8_t stby_on = (STBY_GPIO->ODR & STBY_PIN) ? 1 : 0;
-			if (stby_on) {
-				MPU6050_SetStandbyState(DISABLE);
-			} else {
-				MPU6050_SetStandbyState(ENABLE);
-			}
-		}
-	}
-}
 
 int main(void)
 {
@@ -61,7 +43,7 @@ int main(void)
 	OLED_Init();
 	Serial_Init();
     Encoder_Init();
-	//MPU6050_Init();
+	MPU6050_Init();
     MD_Init();
 	Comm_Init();
 
@@ -84,8 +66,6 @@ int main(void)
 
 
 	/* 启动调度 */
-	/* 创建按键监听任务：用于 Toggle 控制电机 STBY */
-	xTaskCreate(vKeyMonitorTask, "KeyMon", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
 	vTaskStartScheduler();
 
 	/* 若调度器返回，进入死循环 */

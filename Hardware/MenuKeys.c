@@ -5,7 +5,7 @@
 #include "queue.h"
 #include "timers.h"
 
-extern uint8_t Flag;
+extern uint8_t Menu_Flag;
 
 // 按键事件队列句柄（模块内部使用）
 static QueueHandle_t xKeyQueue = NULL;
