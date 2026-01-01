@@ -69,7 +69,7 @@ static void vCommTask(void *pv)
     (void)pv;
     for (;;)
     {
-        float out[10];
+        float out[12];
         out[0] = Comm_pitch;
         out[1] = Comm_roll;
         out[2] = Comm_yaw;
@@ -81,7 +81,10 @@ static void vCommTask(void *pv)
         PID_GetConfigParam(0, 1, out + 8);
         PID_GetConfigParam(0, 2, out + 9);
 
-        Serial_SendJustFloat(out, 10);
+        /* 附加: 当前堆剩余与历史最小堆剩余（Bytes） */
+        out[10] = (float)xPortGetFreeHeapSize();
+        out[11] = (float)xPortGetMinimumEverFreeHeapSize();
+        Serial_SendJustFloat(out, 12);
 
         Serial_ProcessRxPackets();
 

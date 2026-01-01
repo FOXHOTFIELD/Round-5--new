@@ -30,7 +30,7 @@ extern "C" {
 #define configTICK_RATE_HZ                      ( ( TickType_t ) 1000 )
 #define configMAX_PRIORITIES                    ( 5 )
 #define configMINIMAL_STACK_SIZE                ( ( uint16_t ) 128 )        /* 以字 (words) 为单位 */
-#define configTOTAL_HEAP_SIZE                   ( ( size_t ) ( 13 * 1024 ) )/* Blue Pill RAM 有限，按需调整 */
+#define configTOTAL_HEAP_SIZE                   ( ( size_t ) ( 12 * 1024 ) )/* 缩减 1KB 以释放系统堆栈余量 */
 #define configMAX_TASK_NAME_LEN                 ( 16 )
 #define configUSE_16_BIT_TICKS                  0
 #define configIDLE_SHOULD_YIELD                 1
@@ -57,7 +57,7 @@ extern "C" {
 #define configUSE_QUEUE_SETS                    0
 #define configUSE_TIMERS                        1
 #define configTIMER_TASK_PRIORITY               ( 2 )
-#define configTIMER_QUEUE_LENGTH                5
+#define configTIMER_QUEUE_LENGTH                3
 #define configTIMER_TASK_STACK_DEPTH            ( configMINIMAL_STACK_SIZE )
 
 #define configUSE_MALLOC_FAILED_HOOK            0

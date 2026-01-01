@@ -702,16 +702,6 @@
           <GroupName>Middlewares/FreeRTOS_CORE</GroupName>
           <Files>
             <File>
-              <FileName>croutine.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\MiddleWares\croutine.c</FilePath>
-            </File>
-            <File>
-              <FileName>event_groups.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\MiddleWares\event_groups.c</FilePath>
-            </File>
-            <File>
               <FileName>list.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\MiddleWares\list.c</FilePath>
@@ -720,11 +710,6 @@
               <FileName>queue.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\MiddleWares\queue.c</FilePath>
-            </File>
-            <File>
-              <FileName>stream_buffer.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\MiddleWares\stream_buffer.c</FilePath>
             </File>
             <File>
               <FileName>tasks.c</FileName>
