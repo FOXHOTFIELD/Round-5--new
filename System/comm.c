@@ -93,10 +93,10 @@ void Comm_Init(void)
 {
     /* 创建队列（如果已经创建则忽略） */
     if (xCommQueue == NULL) {
-        xCommQueue = xQueueCreate(8, sizeof(CommMsg_t));
+        xCommQueue = xQueueCreate(3, sizeof(CommMsg_t));
     }
     /* 创建任务：DWT 优先级略高以保证频率测量稳定 */
-    if (xTaskCreate(vDWTTask, "DWT", 256, NULL, tskIDLE_PRIORITY + 3, NULL) != pdPASS) {
+    if (xTaskCreate(vDWTTask, "DWT", 128, NULL, tskIDLE_PRIORITY + 3, NULL) != pdPASS) {
     }
-    xTaskCreate(vCommTask, "Comm", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(vCommTask, "Comm", 192, NULL, tskIDLE_PRIORITY + 1, NULL);
 }

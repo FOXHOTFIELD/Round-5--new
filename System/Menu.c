@@ -19,10 +19,10 @@ extern Motor_STBY_t Motor_STBY;
 TaskHandle_t xMenuShowHandle = NULL; // 菜单显示任务句柄，用于接收通知唤醒刷新
 volatile BaseType_t oled_update_blocked = pdFALSE; // 当某些操作需要临时阻止自动刷新时置位
 
-static void vMenu_ReadCommandFromSerial(void *pv);
-
 static void vMenu_ShowTask(void* pv);
 static void vMenuTask(void *pv);
+static void vMenu_ReadCommandFromSerial(void *pv);
+
 static void Menu_DrawItem(void);
 static void Menu_DrawCursor(void);
 static void Menu_ShowDebug(void);
@@ -96,9 +96,10 @@ void Menu_Init(void)
     // 初始化按键硬件与事件队列（从 MenuKeys 模块）
     MenuKeys_Init();
     /* 在此创建菜单相关任务，便于模块自包含初始化 */
-    (void)xTaskCreate(vMenuTask, "MenuTask", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
+    (void)xTaskCreate(vMenuTask, "MenuTask", 192, NULL, tskIDLE_PRIORITY + 1, NULL);
     TaskHandle_t hMenuShow = NULL;
-    (void)xTaskCreate(vMenu_ShowTask, "MenuShow", 256, NULL, tskIDLE_PRIORITY + 1, &hMenuShow);
+    (void)xTaskCreate(vMenu_ShowTask, "MenuShow", 192, NULL, tskIDLE_PRIORITY + 1, &hMenuShow);
+
     Menu_SetShowHandle(hMenuShow);
     if (hMenuShow != NULL)
         xTaskNotifyGive(hMenuShow); /* 初始通知，刷新首次界面 */

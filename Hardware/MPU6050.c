@@ -127,7 +127,7 @@ void MPU6050_Init(void)
 
 	/* 创建自检任务，避免在初始化中阻塞 */
 	{
-		const uint16_t stackDepthSelf = 256; /* words */
+		const uint16_t stackDepthSelf = 160; /* words */
 		const UBaseType_t prioritySelf = tskIDLE_PRIORITY + 1;
 		(void)xTaskCreate(vMPU6050SelfCorrectTask, "MPUSelf", stackDepthSelf, NULL, prioritySelf, NULL);
 	}
@@ -304,7 +304,7 @@ void vMPU6050SelfCorrectTask(void *pvParameters)
 
 void MPU6050_StartPoseTask(void)
 {
-	const uint16_t stackDepth = 512; // words
+	const uint16_t stackDepth = 320; // words
 	const UBaseType_t priority = tskIDLE_PRIORITY + 1;
 	(void)xTaskCreate(vPoseUpdateTask, "Pose", stackDepth, NULL, priority, NULL);
 }

@@ -8,12 +8,12 @@
 
 #include "Serial.h"
 
-typedef enum {
-    COMM_TYPE_NONE = 0,
-    COMM_TYPE_POSE = 1,
-    COMM_TYPE_ENCODER = 2
-} CommType_t;
+/* 接收数据包最大长度（包含用户负载），与串口解析保持一致 */
+#ifndef COMM_MSG_MAX_LEN
+#define COMM_MSG_MAX_LEN 96
+#endif
 
+/* 通用数据包：只做长度限制，不假设内部格式 */
 typedef struct {
     uint16_t len;             /* 实际负载长度 */
     uint8_t  payload[COMM_MSG_MAX_LEN];

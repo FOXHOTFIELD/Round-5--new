@@ -30,7 +30,7 @@ extern "C" {
 #define configTICK_RATE_HZ                      ( ( TickType_t ) 1000 )
 #define configMAX_PRIORITIES                    ( 5 )
 #define configMINIMAL_STACK_SIZE                ( ( uint16_t ) 128 )        /* 以字 (words) 为单位 */
-#define configTOTAL_HEAP_SIZE                   ( ( size_t ) ( 12 * 1024 ) )/* Blue Pill RAM 有限，按需调整 */
+#define configTOTAL_HEAP_SIZE                   ( ( size_t ) ( 13 * 1024 ) )/* Blue Pill RAM 有限，按需调整 */
 #define configMAX_TASK_NAME_LEN                 ( 16 )
 #define configUSE_16_BIT_TICKS                  0
 #define configIDLE_SHOULD_YIELD                 1
@@ -53,12 +53,12 @@ extern "C" {
  *----------------------------------------------------------*/
 #define configUSE_MUTEXES                       1
 #define configUSE_RECURSIVE_MUTEXES             0
-#define configUSE_COUNTING_SEMAPHORES           1
-#define configUSE_QUEUE_SETS                    1
+#define configUSE_COUNTING_SEMAPHORES           0
+#define configUSE_QUEUE_SETS                    0
 #define configUSE_TIMERS                        1
 #define configTIMER_TASK_PRIORITY               ( 2 )
-#define configTIMER_QUEUE_LENGTH                10
-#define configTIMER_TASK_STACK_DEPTH            ( configMINIMAL_STACK_SIZE * 2 )
+#define configTIMER_QUEUE_LENGTH                5
+#define configTIMER_TASK_STACK_DEPTH            ( configMINIMAL_STACK_SIZE )
 
 #define configUSE_MALLOC_FAILED_HOOK            0
 #define configCHECK_FOR_STACK_OVERFLOW          2   /* 0=禁用，1=简单检测，2=增强检测 */
@@ -110,6 +110,10 @@ extern "C" {
  *----------------------------------------------------------*/
 #define configAPPLICATION_ALLOCATED_HEAP         0
 #define configNUM_THREAD_LOCAL_STORAGE_POINTERS  0
+
+/* 仅使用动态分配，关闭静态分配以缩减占用 */
+#define configSUPPORT_STATIC_ALLOCATION          0
+#define configSUPPORT_DYNAMIC_ALLOCATION         1
 
 #ifdef __cplusplus
 }

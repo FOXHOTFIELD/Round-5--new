@@ -48,7 +48,7 @@ void PID_Init(void)
     PID_AttachMotor(&PID_Para_Speed, motor_status);
     PID_SetTarget(&PID_Para_Speed, 20.0f);
     
-    xTaskCreate(vPIDTask, "PIDTask", 256, NULL, tskIDLE_PRIORITY+1, NULL);
+    xTaskCreate(vPIDTask, "PIDTask", 160, NULL, tskIDLE_PRIORITY+1, NULL);
 }
 
 static inline float clamp_float(float x, float minv, float maxv)
