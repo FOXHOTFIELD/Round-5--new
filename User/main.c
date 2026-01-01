@@ -46,9 +46,7 @@ int main(void)
 	MPU6050_Init();
     MD_Init();
 	Comm_Init();
-
-    Motor_SetSpeedPercent(1, 99.9);
-    Motor_SetStandbyState(DISABLE);
+    PID_Init();
 
     #ifdef LEDtest
         /* 使能 GPIOC 时钟并配置 PC13 为推挽输出 */
@@ -63,7 +61,6 @@ int main(void)
         /* 创建 LED 监控任务 */
         xTaskCreate(vLedMonitorTask, "LED", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
     #endif
-
 
 	/* 启动调度 */
 	vTaskStartScheduler();

@@ -10,3 +10,4 @@ extern volatile float Comm_yaw;
 extern volatile float Comm_fps;
 extern volatile float Comm_dt_ms;
 extern volatile float Comm_encoder;
+extern volatile float Comm_out;

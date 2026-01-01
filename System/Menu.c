@@ -3,6 +3,7 @@
 #include <string.h>
 
 uint8_t Menu_Flag = 0;
+extern Motor_STBY_t Motor_STBY;
 /* 功能概要:
  * - 菜单状态管理：定义并初始化 `Menu_Status`（光标与页面索引）。
  * - 主菜单项：提供 `Menu_Main`（标题 "Main"，选项 "Run\\nData"）。
@@ -16,8 +17,8 @@ uint8_t Menu_Flag = 0;
 TaskHandle_t xMenuShowHandle = NULL; // 菜单显示任务句柄，用于接收通知唤醒刷新
 volatile BaseType_t oled_update_blocked = pdFALSE; // 当某些操作需要临时阻止自动刷新时置位
 
-void vMenu_ShowTask(void* pv);
-void vMenuTask(void *pv);
+static void vMenu_ShowTask(void* pv);
+static void vMenuTask(void *pv);
 static void Menu_DrawItem(void);
 static void Menu_DrawCursor(void);
 static void Menu_ShowDebug(void);
@@ -113,7 +114,7 @@ void Menu_SetShowHandle(TaskHandle_t h)
  * 返回：此函数不会返回（任务循环）
  */
 
-void vMenuTask(void *pv)
+static void vMenuTask(void *pv)
 {
     KeyEvent_t ev;
     for(;;)
@@ -154,7 +155,7 @@ void vMenuTask(void *pv)
  * 参数：`pv` - 任务参数（未使用）
  * 返回：此函数不会返回（任务循环）
  */
-void vMenu_ShowTask(void* pv)
+static void vMenu_ShowTask(void* pv)
 {
     (void) pv;
 
@@ -336,7 +337,6 @@ static void Menu_ControlSTBY(KeyEvent_t ev)
 {
     (void) ev;
     
-    extern Motor_STBY_t Motor_STBY;
     if (Motor_STBY)
     {
         Motor_SetStandbyState((FunctionalState)Disable);

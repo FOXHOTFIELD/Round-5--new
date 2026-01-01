@@ -16,7 +16,8 @@ volatile float Comm_roll = 0.0f;
 volatile float Comm_yaw = 0.0f;
 volatile float Comm_fps = 0.0f;
 volatile float Comm_dt_ms = 0.0f;
-volatile float Comm_encoder = 0.0f;
+volatile float Comm_encoder = 0.0f; //在速度环pid任务中更新
+volatile float Comm_out = 0.0f; //在速度环pid任务中更新
 
 /* DWT 工具 */
 static inline void DWT_Init(void)
@@ -66,14 +67,15 @@ static void vCommTask(void *pv)
     (void)pv;
     for (;;)
     {
-        float out6[6];
-        out6[0] = Comm_pitch;
-        out6[1] = Comm_roll;
-        out6[2] = Comm_yaw;
-        out6[3] = Comm_encoder;
-        out6[4] = Comm_fps;
-        out6[5] = Comm_dt_ms;
-        Serial_SendJustFloat(out6, 6);
+        float out7[7];
+        out7[0] = Comm_pitch;
+        out7[1] = Comm_roll;
+        out7[2] = Comm_yaw;
+        out7[3] = Comm_encoder;
+        out7[4] = Comm_fps;
+        out7[5] = Comm_dt_ms;
+        out7[6] = Comm_out;
+        Serial_SendJustFloat(out7, 7);
         vTaskDelay(pdMS_TO_TICKS(COMM_UPLOAD_INTERVAL_MS));
     }
 }

@@ -45,9 +45,6 @@ typedef enum {
 // 初始化菜单显示及按键轮询任务（调用后会创建任务和队列）
 void Menu_Init(void);
 
-/* 任务函数导出：在 main.c 中集中创建任务 */
-void vMenuTask(void *pv);
-void vMenu_ShowTask(void *pv);
 
 /* 设置显示任务句柄，用于通知唤醒显示任务 */
 void Menu_SetShowHandle(TaskHandle_t h);

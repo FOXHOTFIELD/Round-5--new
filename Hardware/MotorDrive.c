@@ -1,4 +1,6 @@
 #include "MotorDrive.h"
+#include "PID.h"
+#include <stddef.h>
 
 Motor_STBY_t Motor_STBY = Disable;
 
@@ -17,6 +19,8 @@ void Motor_SetStandbyState(FunctionalState NewState)
     }
     
     Motor_STBY = (Motor_STBY_t) NewState;
+
+    PID_Reset(NULL);
 
 }
 

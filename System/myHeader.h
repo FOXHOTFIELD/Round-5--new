@@ -17,6 +17,7 @@
 #include "MotorDrive.h"
 #include "filter.h"
 #include "comm.h"
+#include "PID.h"
 
 #include <stdint.h>
 #include <stdbool.h>

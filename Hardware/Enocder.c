@@ -88,7 +88,7 @@ void Encoder_Init(void)
 	butterworth2_init(&speed_lp, 10.0f, 50.0f);
 
 	/* 创建编码器后台任务，周期性读取并更新共享值 */
-	(void)xTaskCreate(vEncoderTask, "Encoder", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
+	//(void)xTaskCreate(vEncoderTask, "Encoder", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
 }
 
 // 原子读 32 位计数：禁用 TIM2 中断，组合高位与 CNT 后恢复
@@ -100,7 +100,7 @@ int32_t Encoder_GetCount(void)
 	high = s_ext_count_high;
 	low  = (uint16_t)TIM_GetCounter(ENC_TIM);
 	NVIC_EnableIRQ(TIM2_IRQn);
-	return (high << 16) | low;
+	return -((high << 16) | low);
 }
 
 // 设置/重置累计计数（例如清零）
@@ -169,16 +169,16 @@ float Encoder_GetAndResetPercent(void)
 	return Encoder_RawToPercent(cnt);
 }
 
-static void vEncoderTask(void *pv)
-{
-    (void) pv;
-
-	for(;;)
-	{
-		//float pct = Encoder_GetAndResetPercent();
-		float pct = Encoder_GetAndResetPercent();
-		/* 写入共享 encoder 值，vCommTask 会合并发送 */
-		Comm_encoder = pct;
-		vTaskDelay(pdMS_TO_TICKS(100));
-	}
-}
+//static void vEncoderTask(void *pv)
+//{
+//    (void) pv;
+//
+//	for(;;)
+//	{
+//		//float pct = Encoder_GetAndResetPercent();
+//		float pct = Encoder_GetAndResetPercent();
+//		/* 写入共享 encoder 值，vCommTask 会合并发送 */
+//		Comm_encoder = pct;
+//		vTaskDelay(pdMS_TO_TICKS(100));
+//	}
+//}

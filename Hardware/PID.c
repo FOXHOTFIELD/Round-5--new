@@ -1,5 +1,11 @@
 #include "PID.h"
-#include "MotorDrive.h"  /* 访问 motor_status->SpeedInPercent 需要完整类型定义 */
+#include "comm.h"
+#include "Encoder.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+
+#include <stdint.h>
 
 /*
  * 增量式 PID 控制（速度）实现
@@ -22,6 +28,29 @@
  * 5) 映射输出：返回值可直接用于 `Motor_SetSpeedPercent(index, out)`，或换算为 PWM/CCR。
  */
 
+static void vPIDTask(void *pv);
+
+static PID_Config_t PID_Config_Speed = {
+    .ErrorIntMax = 100, .ErrorIntMin = -100,
+    .Kp = 0.8f,
+    .Ki = 0.0f,
+    .Kd = 0.0f,
+    .OutMax = 100, .OutMin = -100,
+    .OutOffset = 0,
+};
+
+static PID_Parameter_t PID_Para_Speed;
+extern Motor_Status_t motor_status[2];
+
+void PID_Init(void)
+{
+    PID_Reset(&PID_Para_Speed);
+    PID_AttachMotor(&PID_Para_Speed, motor_status);
+    PID_SetTarget(&PID_Para_Speed, 20.0f);
+    
+    xTaskCreate(vPIDTask, "PIDTask", 256, NULL, tskIDLE_PRIORITY+1, NULL);
+}
+
 static inline float clamp_float(float x, float minv, float maxv)
 {
 	/*
@@ -33,75 +62,167 @@ static inline float clamp_float(float x, float minv, float maxv)
 	return x;
 }
 
-void PID_Reset(PID_Status *status)
+void PID_Reset(PID_Parameter_t *para)
 {
 	/*
 	 * 重置运行状态：清零误差与历史项，输出归零。
 	 * 在开始控制或更换目标值跨度较大时，可调用以避免历史残留影响。
 	 */
-	if (!status) return;
-	status->Error = 0.0f;
-	status->prev_error_1 = 0.0f;
-	status->prev_error_2 = 0.0f;
-	status->last_output = 0.0f; /* 原始控制量（未叠加偏置） */
+	if (para == NULL)
+        para = &PID_Para_Speed;
+
+	para->Error = 0.0f;
+	para->prev_error_1 = 0.0f;
+	para->prev_error_2 = 0.0f;
+	para->last_output = 0.0f; /* 原始控制量（未叠加偏置） */
 }
 
-void PID_AttachMotor(PID_Status *status, Motor_Status_t *motor)
+void PID_AttachMotor(PID_Parameter_t *para, Motor_Status_t *motor)
 {
 	/*
 	 * 绑定电机状态指针（可选）。
 	 * 若仅在外部将 PID 输出传入电机接口，此指针可不使用。
 	 */
-	if (!status) return;
-	status->motor_status = motor;
+	if (!para) return;
+	para->motor_status = motor;
 }
 
-void PID_SetTarget(PID_Status *status, float target)
+void PID_SetTarget(PID_Parameter_t *status, float target)
 {
 	/* 设置速度目标（建议单位：百分比 -100..100） */
 	if (!status) return;
 	status->Target = target;
+    
+    
 }
 
-float PID_ComputeIncremental(const PID_Config *cfg, PID_Status *status)
+float PID_ComputeIncremental(const PID_Config_t *cfg, PID_Parameter_t *status)
 {
 	if (!cfg || !status) return 0.0f;
 
-	/* 当前误差：目标 - 反馈速度
-	 * 现在假定已正确绑定电机（status->motor_status 不为空），直接使用 motor_status->SpeedInPercent 作为反馈。
-	 * 若未绑定，使用 0 作为退化反馈（调用者应保证已绑定）。
-	 */
+	/* 性能优化：缓存频繁访问的字段到局部变量，减少结构体读写次数 */
+	const float Kp = cfg->Kp;
+	const float Ki = cfg->Ki;
+	const float Kd = cfg->Kd;
+	const float OutMin = cfg->OutMin;
+	const float OutMax = cfg->OutMax;
+	const float OutOffset = cfg->OutOffset;
+
+	float prev1 = status->prev_error_1;
+	float prev2 = status->prev_error_2;
+	float last_out = status->last_output;
+
+	/* 读取反馈并计算误差（尽量只读一次 motor_status 指针） */
 	float fb = 0.0f;
-	if (status->motor_status) {
-		fb = status->motor_status->SpeedInPercent;
-	}
+	Motor_Status_t *ms = status->motor_status;
+	if (ms) fb = ms->SpeedInPercent;
+
 	float e = status->Target - fb;
 	status->Error = e;
-	/* 增量式 PID 三项 */
-	float p_term = cfg->Kp * (e - status->prev_error_1);
-	/*
-	 * Ki 离散化说明：
-	 * - 常见离散形式为 Ki*T*e(k)，其中 T 为采样周期；若已将 T 合入 Ki，则可直接 Ki*e(k)。
-	 * - 若担心积分“过冲”，可在外层对 e 进行限幅（例如 clamp(e, ErrorIntMin, ErrorIntMax)）。
-	 */
-	float i_term = cfg->Ki * e; /* Ki 已包含采样周期的折算 */
 
-	/* D 项离散近似：e(k) - 2e(k-1) + e(k-2) 对应二阶差分，等价于对速度变化的抑制 */
-	float d_term = cfg->Kd * (e - 2.0f * status->prev_error_1 + status->prev_error_2);
+	/* P 项（增量形式） */
+	float p_term = Kp * (e - prev1);
+
+	/* 对积分项使用误差限幅以限制积分累积（避免风up），改为使用配置中的 ErrorIntMin/Max */
+	float e_i = e;
+	if (e_i > cfg->ErrorIntMax) e_i = cfg->ErrorIntMax;
+	else if (e_i < cfg->ErrorIntMin) e_i = cfg->ErrorIntMin;
+	float i_term = Ki * e_i;
+
+	/* D 项二阶差分 */
+	float d_term = Kd * (e - 2.0f * prev1 + prev2);
 
 	float delta_u = p_term + i_term + d_term;
 
-	/* 原始输出（未加偏置），并进行限幅 */
-	float raw_u = status->last_output + delta_u;
-	raw_u = clamp_float(raw_u, cfg->OutMin, cfg->OutMax);
+	/* 计算并限幅原始输出，尽量使用局部变量以减少写内存次数 */
+	float raw_u = last_out + delta_u;
+	if (raw_u > OutMax) raw_u = OutMax;
+	else if (raw_u < OutMin) raw_u = OutMin;
 
-	/* 更新历史项 */
-	status->prev_error_2 = status->prev_error_1;
+	/* 把历史项一次性写回状态结构体（减少多次写操作） */
+	status->prev_error_2 = prev1;
 	status->prev_error_1 = e;
 	status->last_output = raw_u;
 
-	/* 返回最终输出：叠加偏置后用于驱动（例如映射到 PWM/百分比） */
-	float final_u = raw_u + cfg->OutOffset;
-	return final_u;
+	/* 叠加偏置并返回（偏置通常很小，直接加在最后） */
+	return raw_u + OutOffset;
 }
 
+/* 新增实现：按环/参数修改配置（保持 static 配置体不暴露） */
+static inline PID_Config_t * PID_GetConfigByLoop(int loop)
+{
+    switch (loop) {
+        case PID_LOOP_SPEED: return &PID_Config_Speed;
+        /* case PID_LOOP_POSITION: return &PID_Config_Position; // 以后扩展 */
+        default: return NULL;
+    }
+}
+
+int PID_EditConfig(PID_Loop_enum loop, PID_Param_enum param, float value)
+{
+    PID_Config_t *cfg = PID_GetConfigByLoop((int)loop);
+    if (!cfg) return -1;
+
+    taskENTER_CRITICAL();
+    switch (param) {
+        case PID_PARAM_KP: cfg->Kp = value; break;
+        case PID_PARAM_KI: cfg->Ki = value; break;
+        case PID_PARAM_KD: cfg->Kd = value; break;
+        case PID_PARAM_OUT_OFFSET: cfg->OutOffset = value; break;
+        case PID_PARAM_OUT_MAX: cfg->OutMax = value; break;
+        case PID_PARAM_OUT_MIN: cfg->OutMin = value; break;
+        default:
+            taskEXIT_CRITICAL();
+            return -2;
+    }
+    taskEXIT_CRITICAL();
+    return 0;
+}
+
+int PID_GetConfigParam(PID_Loop_enum loop, PID_Param_enum param, float *out_value)
+{
+    if (!out_value) return -3;
+    PID_Config_t *cfg = PID_GetConfigByLoop((int)loop);
+    if (!cfg) return -1;
+
+    taskENTER_CRITICAL();
+    switch (param) {
+        case PID_PARAM_KP: *out_value = cfg->Kp; break;
+        case PID_PARAM_KI: *out_value = cfg->Ki; break;
+        case PID_PARAM_KD: *out_value = cfg->Kd; break;
+        case PID_PARAM_OUT_OFFSET: *out_value = cfg->OutOffset; break;
+        case PID_PARAM_OUT_MAX: *out_value = cfg->OutMax; break;
+        case PID_PARAM_OUT_MIN: *out_value = cfg->OutMin; break;
+        default:
+            taskEXIT_CRITICAL();
+            return -2;
+    }
+    taskEXIT_CRITICAL();
+    return 0;
+}
+
+static void vPIDTask(void *pv)
+{
+    (void)pv;
+
+    TickType_t last = xTaskGetTickCount();
+    TickType_t period = pdMS_TO_TICKS(PID_UPDATE_MS);
+
+    for (;;)
+    {
+
+        float pct = Encoder_GetAndResetPercent();
+        /* 写入共享 encoder 值，vCommTask 会合并发送 */
+        Comm_encoder = pct;
+
+        PID_Para_Speed.motor_status->SpeedInPercent = Comm_encoder;
+
+        float out = PID_ComputeIncremental(&PID_Config_Speed, &PID_Para_Speed);
+        
+        Comm_out = out;
+
+        Motor_SetSpeedPercent(1, out);
+
+        vTaskDelayUntil(&last, period);
+    }
+}
