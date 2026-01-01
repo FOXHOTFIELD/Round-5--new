@@ -1,14 +1,25 @@
-#include "Serial.h"
+
 
 #include "stm32f10x_dma.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
 
+#include "FreeRTOS.h"
+#include "queue.h"
+#include "task.h"
+#include "comm.h" /* 指定 System 目录，避免与 User/comm.h 冲突 */
+
 // 接收缓冲区和标志位
 uint8_t Serial_RxBuffer[100];
 uint16_t Serial_RxLength;
 uint8_t Serial_RxFlag;
+
+/* 文本协议限制：@ 开头，\n 结束，负载最长 COMM_MSG_MAX_LEN 字节 */
+#define SERIAL_PACKET_MAX_PAYLOAD COMM_MSG_MAX_LEN
+
+static void Serial_DispatchPacket(const uint8_t *payload, uint16_t len);
+static void Serial_ParseBuffer(const uint8_t *buf, uint16_t len);
 
 /**
   * @brief  串口初始化
@@ -17,76 +28,76 @@ uint8_t Serial_RxFlag;
   */
 void Serial_Init(void)
 {
-	// 开启时钟（USART2 在 APB1）
-	RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
-	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
-	
-	// GPIO初始化
-	GPIO_InitTypeDef GPIO_InitStructure;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;		// PA2 TX
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_Init(GPIOA, &GPIO_InitStructure);
-	
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;		// PA3 RX
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_Init(GPIOA, &GPIO_InitStructure);
-	
-	// USART初始化
-	USART_InitTypeDef USART_InitStructure;
-	USART_InitStructure.USART_BaudRate = 115200;
-	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
-	USART_InitStructure.USART_Mode = USART_Mode_Tx | USART_Mode_Rx;
-	USART_InitStructure.USART_Parity = USART_Parity_No;
-	USART_InitStructure.USART_StopBits = USART_StopBits_1;
-	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
-	USART_Init(USART2, &USART_InitStructure);
-	
-	// DMA TX 初始化（USART2_TX -> DMA1_Channel7）
-	DMA_InitTypeDef DMA_InitStructure;
-	DMA_DeInit(DMA1_Channel7);
-	DMA_InitStructure.DMA_BufferSize = 0;
-	DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
-	DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
-	DMA_InitStructure.DMA_MemoryBaseAddr = 0;
-	DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
-	DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
-	DMA_InitStructure.DMA_Mode = DMA_Mode_Normal;
-	DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&USART2->DR;
-	DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
-	DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
-	DMA_InitStructure.DMA_Priority = DMA_Priority_Medium;
-	DMA_Init(DMA1_Channel7, &DMA_InitStructure);
-	
-	// DMA RX 初始化（USART2_RX -> DMA1_Channel6）
-	DMA_DeInit(DMA1_Channel6);
-	DMA_InitStructure.DMA_BufferSize = 100;
-	DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
-	DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)Serial_RxBuffer;
-	DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;
-	DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&USART2->DR;
-	DMA_Init(DMA1_Channel6, &DMA_InitStructure);
-	DMA_Cmd(DMA1_Channel6, ENABLE);
-	
-	// 使能USART DMA
-	USART_DMACmd(USART2, USART_DMAReq_Tx | USART_DMAReq_Rx, ENABLE);
-	
-	// 使能USART2 IDLE中断
-	USART_ITConfig(USART2, USART_IT_IDLE, ENABLE);
-	
-	// 配置NVIC
-	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
-	NVIC_InitTypeDef NVIC_InitStructure;
-	NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;
-	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
-	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
-	NVIC_Init(&NVIC_InitStructure);
-	
-	// 使能USART
-	USART_Cmd(USART2, ENABLE);
+    // 开启时钟（USART2 在 APB1）
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
+
+    // GPIO初始化
+    GPIO_InitTypeDef GPIO_InitStructure;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2; // PA2 TX
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3; // PA3 RX
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+    // USART初始化
+    USART_InitTypeDef USART_InitStructure;
+    USART_InitStructure.USART_BaudRate = 115200;
+    USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    USART_InitStructure.USART_Mode = USART_Mode_Tx | USART_Mode_Rx;
+    USART_InitStructure.USART_Parity = USART_Parity_No;
+    USART_InitStructure.USART_StopBits = USART_StopBits_1;
+    USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+    USART_Init(USART2, &USART_InitStructure);
+
+    // DMA TX 初始化（USART2_TX -> DMA1_Channel7）
+    DMA_InitTypeDef DMA_InitStructure;
+    DMA_DeInit(DMA1_Channel7);
+    DMA_InitStructure.DMA_BufferSize = 0;
+    DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
+    DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
+    DMA_InitStructure.DMA_MemoryBaseAddr = 0;
+    DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+    DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
+    DMA_InitStructure.DMA_Mode = DMA_Mode_Normal;
+    DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&USART2->DR;
+    DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+    DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+    DMA_InitStructure.DMA_Priority = DMA_Priority_Medium;
+    DMA_Init(DMA1_Channel7, &DMA_InitStructure);
+
+    // DMA RX 初始化（USART2_RX -> DMA1_Channel6）
+    DMA_DeInit(DMA1_Channel6);
+    DMA_InitStructure.DMA_BufferSize = 100;
+    DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
+    DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)Serial_RxBuffer;
+    DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;
+    DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&USART2->DR;
+    DMA_Init(DMA1_Channel6, &DMA_InitStructure);
+    DMA_Cmd(DMA1_Channel6, ENABLE);
+
+    // 使能USART DMA
+    USART_DMACmd(USART2, USART_DMAReq_Tx | USART_DMAReq_Rx, ENABLE);
+
+    // 使能USART2 IDLE中断
+    USART_ITConfig(USART2, USART_IT_IDLE, ENABLE);
+
+    // 配置NVIC
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
+    NVIC_InitTypeDef NVIC_InitStructure;
+    NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
+    NVIC_Init(&NVIC_InitStructure);
+
+    // 使能USART
+    USART_Cmd(USART2, ENABLE);
 }
 
 /**
@@ -220,6 +231,79 @@ void Serial_SendJustFloat(float *data, uint16_t num)
     uint8_t tail[4] = {0x00, 0x00, 0x80, 0x7f};
     Serial_SendArray((uint8_t *)data, num * 4);
     Serial_SendArray(tail, 4);
+}
+
+/*
+ * @brief  封装原始 payload 入队，不假设内部结构
+ * @param  payload 去掉包头/包尾后的数据
+ * @param  len 数据长度
+ */
+static void Serial_DispatchPacket(const uint8_t *payload, uint16_t len)
+{
+  if (payload == NULL || len == 0) return;
+  /* 预留 1 字节放字符串结束符，便于上层按文本解析 */
+  if (len >= SERIAL_PACKET_MAX_PAYLOAD) len = SERIAL_PACKET_MAX_PAYLOAD - 1;
+
+  CommMsg_t msg;
+  msg.len = len;
+  memcpy(msg.payload, payload, len);
+  msg.payload[len] = '\0';
+
+	/* 投递到队列，队列未创建则忽略 */
+	if (xCommQueue != NULL) {
+		xQueueSend(xCommQueue, &msg, 0);
+	}
+}
+
+/*
+ * @brief  从 DMA 缓冲中提取完整帧，支持粘包/多包
+ */
+static void Serial_ParseBuffer(const uint8_t *buf, uint16_t len)
+{
+	uint16_t i = 0;
+	while (i < len) {
+		/* 定位帧头 */
+		while (i < len && buf[i] != '@') {
+			i++;
+		}
+		if (i >= len) break;
+		uint16_t start = i + 1; /* 指向正文起点 */
+
+		/* 查找帧尾 */
+		i = start;
+		while (i < len && buf[i] != '\n') {
+			i++;
+		}
+		if (i >= len) break; /* 未找到完整帧，退出等待下次补齐 */
+
+		uint16_t end = i; /* \n 位置 */
+		if (end > start) {
+			uint16_t payload_len = end - start;
+			Serial_DispatchPacket(&buf[start], payload_len);
+		}
+		i++; /* 跳过 \n 继续查找下一帧 */
+	}
+}
+
+/**
+  * @brief  轮询处理串口接收缓冲并入队
+  * @note   应在 FreeRTOS 任务中定期调用，避免在中断中做重解析
+  */
+void Serial_ProcessRxPackets(void)
+{
+	if (Serial_RxFlag == 0) return;
+
+	uint8_t snapshot[sizeof(Serial_RxBuffer)];
+	uint16_t len;
+
+	taskENTER_CRITICAL();
+	len = Serial_RxLength;
+	if (len > sizeof(snapshot)) len = sizeof(snapshot);
+	memcpy(snapshot, Serial_RxBuffer, len);
+	Serial_RxFlag = 0; /* 清标志，允许接收下一帧 */
+	taskEXIT_CRITICAL();
+
+	Serial_ParseBuffer(snapshot, len);
 }
 
 /**

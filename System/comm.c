@@ -1,4 +1,5 @@
 #include "comm.h"
+#include "PID.h"
 
 #include "stm32f10x.h"
 
@@ -9,7 +10,8 @@
 
 
 /* 全局定义 */
-QueueHandle_t xCommQueue = NULL;
+
+QueueHandle_t xCommQueue = NULL; //在CommInit中初始化 在Menu中使用以接收任务
 
 volatile float Comm_pitch = 0.0f;
 volatile float Comm_roll = 0.0f;
@@ -67,15 +69,22 @@ static void vCommTask(void *pv)
     (void)pv;
     for (;;)
     {
-        float out7[7];
-        out7[0] = Comm_pitch;
-        out7[1] = Comm_roll;
-        out7[2] = Comm_yaw;
-        out7[3] = Comm_encoder;
-        out7[4] = Comm_fps;
-        out7[5] = Comm_dt_ms;
-        out7[6] = Comm_out;
-        Serial_SendJustFloat(out7, 7);
+        float out[10];
+        out[0] = Comm_pitch;
+        out[1] = Comm_roll;
+        out[2] = Comm_yaw;
+        out[3] = Comm_encoder;
+        out[4] = Comm_fps;
+        out[5] = Comm_dt_ms;
+        out[6] = Comm_out;
+        PID_GetConfigParam(0, 0, out + 7);
+        PID_GetConfigParam(0, 1, out + 8);
+        PID_GetConfigParam(0, 2, out + 9);
+
+        Serial_SendJustFloat(out, 10);
+
+        Serial_ProcessRxPackets();
+
         vTaskDelay(pdMS_TO_TICKS(COMM_UPLOAD_INTERVAL_MS));
     }
 }

@@ -1,5 +1,7 @@
 #include "Menu.h"
 #include "MenuKeys.h"
+#include "comm.h"
+#include "PID.h"
 #include <string.h>
 
 uint8_t Menu_Flag = 0;
@@ -16,6 +18,8 @@ extern Motor_STBY_t Motor_STBY;
 // 菜单相关全局（用于与按键模块协同）
 TaskHandle_t xMenuShowHandle = NULL; // 菜单显示任务句柄，用于接收通知唤醒刷新
 volatile BaseType_t oled_update_blocked = pdFALSE; // 当某些操作需要临时阻止自动刷新时置位
+
+static void vMenu_ReadCommandFromSerial(void *pv);
 
 static void vMenu_ShowTask(void* pv);
 static void vMenuTask(void *pv);
@@ -98,6 +102,8 @@ void Menu_Init(void)
     Menu_SetShowHandle(hMenuShow);
     if (hMenuShow != NULL)
         xTaskNotifyGive(hMenuShow); /* 初始通知，刷新首次界面 */
+
+    (void)xTaskCreate(vMenu_ReadCommandFromSerial, "CmdFromSerial", 192, NULL, tskIDLE_PRIORITY + 1, NULL);
 }
 
 void Menu_SetShowHandle(TaskHandle_t h)
@@ -244,7 +250,7 @@ static void Menu_DrawCursor(void)
 static void Menu_ShowDebug(void)
 {
     extern Motor_STBY_t Motor_STBY;
-    OLED_ShowNum(95, 0, (uint8_t)Motor_STBY, 1, OLED_6X8);
+    //OLED_ShowFloatNum(95, 0, (uint8_t), 1, 2, OLED_6X8);
 }
 
 /**
@@ -344,5 +350,30 @@ static void Menu_ControlSTBY(KeyEvent_t ev)
     else
     {
         Motor_SetStandbyState((FunctionalState)Enable);
+    }
+}
+
+static void vMenu_ReadCommandFromSerial(void *pv)
+{
+    (void) pv;
+
+    CommMsg_t msg;
+    for (;;)
+    {
+        if (xQueueReceive(xCommQueue, &msg, portMAX_DELAY) == pdPASS)
+        {
+            // msg.len 为有效长度，msg.payload 为原始负载
+            // 在这里按你的协议解析 payload
+            
+            PID_Loop_enum idx_loop;
+            PID_Param_enum idx_param;
+            float val;
+            int loop_i, param_i;
+            if (sscanf((const char*)msg.payload, "%d,%d,%f", &loop_i, &param_i, &val) == 3) {
+                idx_loop = (PID_Loop_enum)loop_i;
+                idx_param = (PID_Param_enum)param_i;
+                PID_EditConfig(idx_loop, idx_param, val);
+            }
+        }
     }
 }

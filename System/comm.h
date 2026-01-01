@@ -15,9 +15,8 @@ typedef enum {
 } CommType_t;
 
 typedef struct {
-    uint8_t type; /* CommType_t */
-    uint8_t len;  /* number of floats in data (max 6) */
-    float data[6];
+    uint16_t len;             /* 实际负载长度 */
+    uint8_t  payload[COMM_MSG_MAX_LEN];
 } CommMsg_t;
 
 /* 上传间隔（ms），可编译时通过 -DCOMM_UPLOAD_INTERVAL_MS=... 覆盖 */
@@ -34,6 +33,7 @@ extern volatile float Comm_yaw;
 extern volatile float Comm_fps;
 extern volatile float Comm_dt_ms;
 extern volatile float Comm_encoder;
+extern volatile float Comm_out;
 
 /* 初始化通信子系统（创建队列与任务） */
 void Comm_Init(void);
