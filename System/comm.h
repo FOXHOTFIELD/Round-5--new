@@ -1,4 +1,4 @@
-#pragma onec
+#pragma once
 
 #ifndef __SYSTEM_COMM_H
 #define __SYSTEM_COMM_H

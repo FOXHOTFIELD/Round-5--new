@@ -103,5 +103,5 @@ void Comm_Init(void)
     /* 创建任务：DWT 优先级略高以保证频率测量稳定 */
     if (xTaskCreate(vDWTTask, "DWT", 128, NULL, tskIDLE_PRIORITY + 3, NULL) != pdPASS) {
     }
-    xTaskCreate(vCommTask, "Comm", 192, NULL, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(vCommTask, "Comm", 256, NULL, tskIDLE_PRIORITY + 2, NULL);
 }

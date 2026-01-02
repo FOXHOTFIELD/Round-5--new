@@ -11,7 +11,8 @@
 #include "comm.h" /* 指定 System 目录，避免与 User/comm.h 冲突 */
 
 // 接收缓冲区和标志位
-uint8_t Serial_RxBuffer[100];
+#define SERIAL_RX_BUFFER_SIZE 100
+uint8_t Serial_RxBuffer[SERIAL_RX_BUFFER_SIZE];
 uint16_t Serial_RxLength;
 uint8_t Serial_RxFlag;
 
@@ -73,10 +74,10 @@ void Serial_Init(void)
 
     // DMA RX 初始化（USART2_RX -> DMA1_Channel6）
     DMA_DeInit(DMA1_Channel6);
-    DMA_InitStructure.DMA_BufferSize = 100;
+    DMA_InitStructure.DMA_BufferSize = SERIAL_RX_BUFFER_SIZE;
     DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
     DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)Serial_RxBuffer;
-    DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;
+    DMA_InitStructure.DMA_Mode = DMA_Mode_Normal; /* 配合 IDLE 中断重装，避免环形写入覆盖 */
     DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&USART2->DR;
     DMA_Init(DMA1_Channel6, &DMA_InitStructure);
     DMA_Cmd(DMA1_Channel6, ENABLE);
@@ -318,10 +319,14 @@ void USART2_IRQHandler(void)
 {
 	if (USART_GetITStatus(USART2, USART_IT_IDLE) == SET)
 	{
-		Serial_RxLength = 100 - DMA_GetCurrDataCounter(DMA1_Channel6);
-		Serial_RxFlag = 1;
-		USART_ReceiveData(USART2); // 清除IDLE标志
-		USART_ClearITPendingBit(USART2, USART_IT_IDLE);
+    DMA_Cmd(DMA1_Channel6, DISABLE);
+    Serial_RxLength = SERIAL_RX_BUFFER_SIZE - DMA_GetCurrDataCounter(DMA1_Channel6);
+    Serial_RxFlag = 1;
+    DMA_SetCurrDataCounter(DMA1_Channel6, SERIAL_RX_BUFFER_SIZE);
+    DMA_ClearFlag(DMA1_FLAG_GL6);
+    DMA_Cmd(DMA1_Channel6, ENABLE);
+    USART_ReceiveData(USART2); // 清除IDLE标志
+    USART_ClearITPendingBit(USART2, USART_IT_IDLE);
 	}
 }
 
