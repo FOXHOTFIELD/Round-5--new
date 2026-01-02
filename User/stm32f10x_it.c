@@ -7,8 +7,9 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f10x_it.h"
-/* 编码器 TIM2 更新中断转发入口（避免修改头文件，这里声明 extern） */
+/* 编码器 TIM2/TIM4 更新中断转发入口（避免修改头文件，这里声明 extern） */
 extern void Encoder_TIM2_IRQHandler(void);
+extern void Encoder_TIM4_IRQHandler(void);
 
 /* include FreeRTOS headers so we can call the port systick handler */
 #include "FreeRTOS.h"
@@ -94,6 +95,11 @@ void EXTI1_IRQHandler(void)
 void TIM2_IRQHandler(void)
 {
   Encoder_TIM2_IRQHandler();
+}
+
+void TIM4_IRQHandler(void)
+{
+  Encoder_TIM4_IRQHandler();
 }
 
 /* 其他外设中断按需添加 */

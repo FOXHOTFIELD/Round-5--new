@@ -3,6 +3,8 @@
 #ifndef __MOTORDRIVE_H_
 #define __MOTORDRIVE_H_
 
+#include <stdint.h>
+
 #include "stm32f10x_gpio.h"
 #include "stm32f10x_tim.h"
 
@@ -27,9 +29,9 @@
 #define AIN2_PIN            GPIO_Pin_12
 
 #define BIN1_GPIO           GPIOB
-#define BIN1_PIN            GPIO_Pin_14
+#define BIN1_PIN            GPIO_Pin_15
 #define BIN2_GPIO           GPIOB
-#define BIN2_PIN            GPIO_Pin_15
+#define BIN2_PIN            GPIO_Pin_14
 
 /* PWM 参数：降低分辨率以提升频率到约 25kHz */
 /* 72MHz / ((PSC+1)*(ARR+1)) = 25kHz -> PSC=0, ARR=2880-1=2879 */
@@ -57,6 +59,16 @@ typedef enum Motor_STBY_t
     Enable  = 1,
 }Motor_STBY_t;
 
+typedef struct MotorId_t
+{
+	uint8_t index;                    /* 电机编号（1/2） */
+	GPIO_TypeDef *in1_gpio;
+	uint16_t in1_pin;
+	GPIO_TypeDef *in2_gpio;
+	uint16_t in2_pin;
+	volatile uint16_t *ccr;           /* PWM 比较寄存器地址 */
+} MotorId_t;
+
 void MD_Init(void);
 void Motor1_SetCompare(uint16_t Compare);
 void Motor2_SetCompare(uint16_t Compare);
@@ -66,6 +78,12 @@ void Motor_SetPWM(uint8_t index, int16_t PWM);
 /* 统一映射：按速度百分比设置（支持 xx.xx%；-100..100），自动映射到 CCR */
 void Motor_SetSpeedPercent(uint8_t index, float percent);
 void Motor_SetStandbyState(FunctionalState NewState);
+
+/* 通过 MotorId 进行控制的接口 */
+const MotorId_t *Motor_GetId(uint8_t index);
+void Motor_SetModeById(const MotorId_t *motor, enum Motor_Mode_t Mode);
+void Motor_SetPWMById(const MotorId_t *motor, int16_t PWM);
+void Motor_SetSpeedPercentById(const MotorId_t *motor, float percent);
 
 
 #endif /* __MOTORDRIVE_H_ */

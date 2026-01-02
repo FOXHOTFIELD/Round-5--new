@@ -2,6 +2,19 @@
 #include "PID.h"
 #include <stddef.h>
 
+static const MotorId_t motor_ids[2] =
+{
+    {.index = 1, .in1_gpio = AIN1_GPIO, .in1_pin = AIN1_PIN, .in2_gpio = AIN2_GPIO, .in2_pin = AIN2_PIN, .ccr = &TIM1->CCR1},
+    {.index = 2, .in1_gpio = BIN1_GPIO, .in1_pin = BIN1_PIN, .in2_gpio = BIN2_GPIO, .in2_pin = BIN2_PIN, .ccr = &TIM1->CCR4},
+};
+
+static const MotorId_t *Motor_Find(uint8_t index)
+{
+    if (index == 1U) return &motor_ids[0];
+    if (index == 2U) return &motor_ids[1];
+    return NULL;
+}
+
 Motor_STBY_t Motor_STBY = Disable;
 
 /* STBY 控制辅助（ENABLE=高，DISABLE=低） */
@@ -131,55 +144,8 @@ void Motor2_SetCompare(uint16_t Compare)
 
 void Motor_SetMode(int numMotor, enum Motor_Mode_t Mode)
 {
-    if(numMotor == 1){
-        switch (Mode)
-        {
-        case Motor_Mode_break:
-            /* AIN1=1, AIN2=1 */
-            AIN1_GPIO->BSRR = (uint32_t)AIN1_PIN | (uint32_t)AIN2_PIN;
-            break;
-        case Motor_Mode_stop:
-            /* AIN1=0, AIN2=0 */
-            AIN1_GPIO->BSRR = ((uint32_t)AIN1_PIN << 16) | ((uint32_t)AIN2_PIN << 16);
-            break;
-        case Motor_Mode_frd_rotation:
-            /* AIN1=1, AIN2=0 */
-            AIN1_GPIO->BSRR = (uint32_t)AIN1_PIN | ((uint32_t)AIN2_PIN << 16);
-            break;
-        case Motor_Mode_rvs_rotation:
-            /* AIN1=0, AIN2=1 */
-            AIN1_GPIO->BSRR = ((uint32_t)AIN1_PIN << 16) | (uint32_t)AIN2_PIN;
-            break;
-        default:
-            break;
-        }
-        motor_status[0].Mode = Mode;
-    }
-
-    else if(numMotor == 2){
-        switch (Mode)
-                {
-        case Motor_Mode_break:
-            /* BIN1=1, BIN2=1 */
-            BIN1_GPIO->BSRR = (uint32_t)BIN1_PIN | (uint32_t)BIN2_PIN;
-            break;
-        case Motor_Mode_stop:
-            /* BIN1=0, BIN2=0 */
-            BIN1_GPIO->BSRR = ((uint32_t)BIN1_PIN << 16) | ((uint32_t)BIN2_PIN << 16);
-            break;
-        case Motor_Mode_frd_rotation:
-            /* BIN1=1, BIN2=0 */
-            BIN1_GPIO->BSRR = (uint32_t)BIN1_PIN | ((uint32_t)BIN2_PIN << 16);
-            break;
-        case Motor_Mode_rvs_rotation:
-            /* BIN1=0, BIN2=1 */
-            BIN1_GPIO->BSRR = ((uint32_t)BIN1_PIN << 16) | (uint32_t)BIN2_PIN;
-            break;
-        default:
-            break;
-        }
-        motor_status[1].Mode = Mode;
-    }
+    const MotorId_t *motor = Motor_Find((uint8_t)numMotor);
+    Motor_SetModeById(motor, Mode);
 }
 /**
     * 函    数：直流电机设置PWM
@@ -189,23 +155,8 @@ void Motor_SetMode(int numMotor, enum Motor_Mode_t Mode)
     */
 void Motor_SetPWM(uint8_t index, int16_t PWM)
 {
-    /* 简洁高效：单分支处理方向，饱和到 [0..PWM_ARR]，减少重复 */
-    uint16_t duty;
-
-    if (PWM >= 0) {
-        Motor_SetMode(index, Motor_Mode_frd_rotation);
-        duty = (PWM > PWM_ARR) ? PWM_ARR : (uint16_t)PWM;
-    } else {
-        Motor_SetMode(index, Motor_Mode_rvs_rotation);
-        int32_t absPWM = -(int32_t)PWM; // 防止 INT16_MIN 溢出
-        duty = (absPWM > PWM_ARR) ? PWM_ARR : (uint16_t)absPWM;
-    }
-
-    if (index == 1) {
-        Motor1_SetCompare(duty);
-    } else if (index == 2) {
-        Motor2_SetCompare(duty);
-    }
+    const MotorId_t *motor = Motor_Find(index);
+    Motor_SetPWMById(motor, PWM);
 }
 
 /**
@@ -221,10 +172,9 @@ void Motor_SetSpeedPercent(uint8_t index, float percent)
     if (percent < -100.0f) percent = -100.0f;
 
     /* 记录状态 */
-    if (index == 1) {
-        motor_status[0].SpeedInPercent = percent;
-    } else if (index == 2) {
-        motor_status[1].SpeedInPercent = percent;
+    const MotorId_t *motor = Motor_Find(index);
+    if (motor) {
+        motor_status[motor->index - 1U].SpeedInPercent = percent;
     }
 
     /* 将百分比转换为百分数的整数（保留两位小数），再用整数映射到占空比 */
@@ -239,5 +189,70 @@ void Motor_SetSpeedPercent(uint8_t index, float percent)
 
     /* 复用整数 PWM 接口，统一方向与比较寄存器设置 */
     int16_t pwm_value = (p100 >= 0) ? (int16_t)duty : -(int16_t)duty;
-    Motor_SetPWM(index, pwm_value);
+    Motor_SetPWMById(motor, pwm_value);
+}
+
+const MotorId_t *Motor_GetId(uint8_t index)
+{
+    return Motor_Find(index);
+}
+
+void Motor_SetModeById(const MotorId_t *motor, enum Motor_Mode_t Mode)
+{
+    if (motor == NULL) return;
+
+    switch (Mode)
+    {
+    case Motor_Mode_break:
+        /* IN1=1, IN2=1 */
+        motor->in1_gpio->BSRR = (uint32_t)motor->in1_pin;
+        motor->in2_gpio->BSRR = (uint32_t)motor->in2_pin;
+        break;
+    case Motor_Mode_stop:
+        /* IN1=0, IN2=0 */
+        motor->in1_gpio->BSRR = ((uint32_t)motor->in1_pin << 16);
+        motor->in2_gpio->BSRR = ((uint32_t)motor->in2_pin << 16);
+        break;
+    case Motor_Mode_frd_rotation:
+        /* IN1=1, IN2=0 */
+        motor->in1_gpio->BSRR = (uint32_t)motor->in1_pin;
+        motor->in2_gpio->BSRR = ((uint32_t)motor->in2_pin << 16);
+        break;
+    case Motor_Mode_rvs_rotation:
+        /* IN1=0, IN2=1 */
+        motor->in1_gpio->BSRR = ((uint32_t)motor->in1_pin << 16);
+        motor->in2_gpio->BSRR = (uint32_t)motor->in2_pin;
+        break;
+    default:
+        break;
+    }
+
+    motor_status[motor->index - 1U].Mode = Mode;
+}
+
+void Motor_SetPWMById(const MotorId_t *motor, int16_t PWM)
+{
+    if (motor == NULL) return;
+
+    /* 简洁高效：单分支处理方向，饱和到 [0..PWM_ARR]，减少重复 */
+    uint16_t duty;
+
+    if (PWM >= 0) {
+        Motor_SetModeById(motor, Motor_Mode_frd_rotation);
+        duty = (PWM > PWM_ARR) ? PWM_ARR : (uint16_t)PWM;
+    } else {
+        Motor_SetModeById(motor, Motor_Mode_rvs_rotation);
+        int32_t absPWM = -(int32_t)PWM; // 防止 INT16_MIN 溢出
+        duty = (absPWM > PWM_ARR) ? PWM_ARR : (uint16_t)absPWM;
+    }
+
+    *(motor->ccr) = duty;
+}
+
+void Motor_SetSpeedPercentById(const MotorId_t *motor, float percent)
+{
+    if (motor == NULL) return;
+
+    /* 复用百分比接口，保持语义一致 */
+    Motor_SetSpeedPercent(motor->index, percent);
 }

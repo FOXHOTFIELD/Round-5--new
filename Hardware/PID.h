@@ -20,6 +20,9 @@ typedef struct PID_Config_t
 	float OutMin;
 	
 	float OutOffset;
+
+	float FfGain;        /* 前馈增益：直接按目标叠加到输出 */
+	float ReverseDecay;   /* 误差符号翻转时衰减历史项/输出，范围 0..1 */
 }PID_Config_t;
 
 ///* 前向声明：与电机驱动中的状态结构保持一致 */
@@ -58,23 +61,33 @@ typedef enum {
 } PID_Loop_enum;
 
 typedef enum {
+	PID_MOTOR_1 = 0,
+	PID_MOTOR_2 = 1,
+} PID_Motor_enum;
+
+typedef enum {
     PID_CONFIG_KP = 0,
     PID_CONFIG_KI = 1,
     PID_CONFIG_KD = 2,
     PID_CONFIG_OUT_OFFSET = 3,
     PID_CONFIG_OUT_MAX = 4,
     PID_CONFIG_OUT_MIN = 5,
+	PID_CONFIG_FF_GAIN = 6,
+	PID_CONFIG_REVERSE_DECAY = 7,
 } PID_Config_enum;
 
 /* 通用编辑接口：指定环与参数进行修改（线程安全） */
 /* 返回 0 成功，负值表示错误（-1: 未知环， -2: 未知参数） */
+/*
+ * @param param选择对应config内的参数
+ */
 int PID_EditConfig(PID_Loop_enum loop, PID_Config_enum param, float value);
 
 /* 可选：读取参数（线程安全） */
 int PID_GetConfigParam(PID_Loop_enum loop, PID_Config_enum param, float *out_value);
 
-int PID_GetParamTarget(PID_Loop_enum loop, float *out_value);
+int PID_GetParamTarget(PID_Loop_enum loop, PID_Motor_enum motor, float *out_value);
 
-int PID_EditTarget(PID_Loop_enum loop, float value);
+int PID_EditTarget(PID_Loop_enum loop, PID_Motor_enum motor, float value);
 
 #endif

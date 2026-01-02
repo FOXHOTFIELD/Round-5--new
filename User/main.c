@@ -41,11 +41,13 @@ int main(void)
 	Menu_Init();
 	OLED_Init();
 	Serial_Init();
-    Encoder_Init();
+	Encoder_Init(ENCODER_A);
+	Encoder_Init(ENCODER_B);
 	MPU6050_Init();
     MD_Init();
 	Comm_Init();
     PID_Init();
+    Motor_SetStandbyState(ENABLE);
 
     #ifdef LEDtest
         /* 使能 GPIOC 时钟并配置 PC13 为推挽输出 */
@@ -85,7 +87,8 @@ int main(void)
     
 
     Serial_Init();
-    Encoder_Init();
+	Encoder_Init(ENCODER_A);
+	Encoder_Init(ENCODER_B);
     MD_Init();
 
     Motor_SetStandbyState(ENABLE);
@@ -133,7 +136,7 @@ int main(void)
 				Motor_SetSpeedPercent(1, 100.0f);
 			}
 
-			float raw = -Encoder_GetAndResetPercent();
+			float raw = -Encoder_GetAndResetPercent(ENCODER_A);
 			float pst = butterworth2_process(&speed_lp, raw);
 
 			OLED_ShowSignedNum(10, 10, pst, 6, OLED_6X8);

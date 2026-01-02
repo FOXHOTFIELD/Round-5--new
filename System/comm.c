@@ -18,8 +18,10 @@ volatile float Comm_roll = 0.0f;
 volatile float Comm_yaw = 0.0f;
 volatile float Comm_fps = 0.0f;
 volatile float Comm_dt_ms = 0.0f;
-volatile float Comm_encoder = 0.0f; //在速度环pid任务中更新
-volatile float Comm_out = 0.0f; //在速度环pid任务中更新
+volatile float Comm_encoder_a = 0.0f; //在速度环pid任务中更新
+volatile float Comm_encoder_b = 0.0f; //在速度环pid任务中更新
+volatile float Comm_out_a = 0.0f; //在速度环pid任务中更新
+volatile float Comm_out_b = 0.0f; //在速度环pid任务中更新
 
 /* DWT 工具 */
 static inline void DWT_Init(void)
@@ -69,24 +71,27 @@ static void vCommTask(void *pv)
     (void)pv;
     for (;;)
     {
-        float out[12];
-        out[0] = Comm_pitch;
-        out[1] = Comm_roll;
-        out[2] = Comm_yaw;
-        out[3] = Comm_encoder;
-        out[4] = Comm_fps;
-        out[5] = Comm_dt_ms;
-        out[6] = Comm_out;
-        PID_GetConfigParam(0, 0, out + 7);
-        PID_GetConfigParam(0, 1, out + 8);
-        PID_GetConfigParam(0, 2, out + 9);
-        PID_GetParamTarget(0, out + 10);
+        float msg[12];
+        msg[0] = Comm_pitch;
+        msg[1] = Comm_roll;
+        msg[2] = Comm_yaw;
+        msg[3] = Comm_encoder_a;
+        //msg[4] = Comm_fps;
+        //msg[5] = Comm_dt_ms;
+        msg[4] = Comm_out_a;
+        msg[5] = Comm_encoder_b;
+        msg[6] = Comm_out_b;
+        PID_GetConfigParam(0, 0, msg + 7);
+        PID_GetConfigParam(0, 1, msg + 8);
+        PID_GetConfigParam(0, 2, msg + 9);
+        PID_GetParamTarget(PID_LOOP_SPEED, PID_MOTOR_1, msg + 10);
+        PID_GetParamTarget(PID_LOOP_SPEED, PID_MOTOR_2, msg + 11);
 
         /* 附加: 当前堆剩余与历史最小堆剩余（Bytes） */
-//       out[10] = (float)xPortGetFreeHeapSize();
-//        out[11] = (float)xPortGetMinimumEverFreeHeapSize();
-       //out[10] = (float)xPortGetFreeHeapSize();
-        Serial_SendJustFloat(out, 11);
+//       msg[10] = (float)xPortGetFreeHeapSize();
+//        msg[11] = (float)xPortGetMinimumEverFreeHeapSize();
+       //msg[10] = (float)xPortGetFreeHeapSize();
+        Serial_SendJustFloat(msg, 12);
 
         Serial_ProcessRxPackets();
 

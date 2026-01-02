@@ -368,20 +368,22 @@ static void vMenu_ReadCommandFromSerial(void *pv)
             
             PID_Loop_enum idx_loop;
             PID_Config_enum idx_param;
+            PID_Motor_enum idx_motor;
             float val;
-            int loop_i, param_i;
-            if (sscanf((const char*)msg.payload, "%d,%d,%f", &loop_i, &param_i, &val) == 3) {
+            int loop_i, param_i, motor_i = 1;
+            int parsed = sscanf((const char*)msg.payload, "%d,%d,%d,%f", &loop_i, &param_i, &motor_i, &val);
+            if (parsed >= 3) {
                 idx_loop = (PID_Loop_enum)loop_i;
                 idx_param = (PID_Config_enum)param_i;
+                idx_motor = (motor_i == 0) ? PID_MOTOR_1 : PID_MOTOR_2;
                 if (param_i != -1)
                 {
                     PID_EditConfig(idx_loop, idx_param, val);
-                }else
+                }else if (motor_i != -1)
                 {
-                    PID_EditTarget(idx_loop, val);
+                    PID_EditTarget(idx_loop, idx_motor, val);
                 }
-                
-                
+               
                 Menu_Flag = 1;
             }
         }

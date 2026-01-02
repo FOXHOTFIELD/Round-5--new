@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+static inline float fabsf_local(float x) { return (x >= 0.0f) ? x : -x; }
+
 /*
  * 增量式 PID 控制（速度）实现
  * 公式：
@@ -30,6 +32,8 @@
 
 static void vPIDTask(void *pv);
 
+#define PID_SPEED_MOTOR_COUNT 2
+
 static PID_Config_t PID_Config_Speed = {
     .ErrorIntMax = 100, .ErrorIntMin = -100,
     .Kp = 0.2f,
@@ -37,18 +41,22 @@ static PID_Config_t PID_Config_Speed = {
     .Kd = 0.2f,
     .OutMax = 100, .OutMin = -100,
     .OutOffset = 0,
+    .FfGain = 0.35f,
+    .ReverseDecay = 0.5f,
 };
 
-static PID_Parameter_t PID_Param_Speed;
+static PID_Parameter_t PID_Param_Speed[PID_SPEED_MOTOR_COUNT];
 extern Motor_Status_t motor_status[2];
 
 void PID_Init(void)
 {
-    PID_Reset(&PID_Param_Speed);
-    PID_AttachMotor(&PID_Param_Speed, motor_status);
-    PID_SetTarget(&PID_Param_Speed, 20.0f);
+    for (int i = 0; i < PID_SPEED_MOTOR_COUNT; ++i)
+    {
+        PID_Reset(&PID_Param_Speed[i]);
+        PID_AttachMotor(&PID_Param_Speed[i], motor_status + i);
+    }
     
-    xTaskCreate(vPIDTask, "PIDTask", 160, NULL, tskIDLE_PRIORITY+1, NULL);
+    xTaskCreate(vPIDTask, "PIDTask", 160, NULL, tskIDLE_PRIORITY+2, NULL);
 }
 
 static inline float clamp_float(float x, float minv, float maxv)
@@ -64,17 +72,23 @@ static inline float clamp_float(float x, float minv, float maxv)
 
 void PID_Reset(PID_Parameter_t *para)
 {
-	/*
-	 * 重置运行状态：清零误差与历史项，输出归零。
-	 * 在开始控制或更换目标值跨度较大时，可调用以避免历史残留影响。
-	 */
-	if (para == NULL)
-        para = &PID_Param_Speed;
+    /*
+     * 重置运行状态：清零误差与历史项，输出归零。
+     * 在开始控制或更换目标值跨度较大时，可调用以避免历史残留影响。
+     */
+    if (para == NULL)
+    {
+        for (int i = 0; i < PID_SPEED_MOTOR_COUNT; ++i)
+        {
+            PID_Reset(&PID_Param_Speed[i]);
+        }
+        return;
+    }
 
-	para->Error = 0.0f;
-	para->prev_error_1 = 0.0f;
-	para->prev_error_2 = 0.0f;
-	para->last_output = 0.0f; /* 原始控制量（未叠加偏置） */
+    para->Error = 0.0f;
+    para->prev_error_1 = 0.0f;
+    para->prev_error_2 = 0.0f;
+    para->last_output = 0.0f; /* 原始控制量（未叠加偏置） */
 }
 
 void PID_AttachMotor(PID_Parameter_t *para, Motor_Status_t *motor)
@@ -92,8 +106,6 @@ void PID_SetTarget(PID_Parameter_t *status, float target)
 	/* 设置速度目标（建议单位：百分比 -100..100） */
 	if (!status) return;
 	status->Target = target;
-    
-    
 }
 
 float PID_ComputeIncremental(const PID_Config_t *cfg, PID_Parameter_t *status)
@@ -107,6 +119,8 @@ float PID_ComputeIncremental(const PID_Config_t *cfg, PID_Parameter_t *status)
 	const float OutMin = cfg->OutMin;
 	const float OutMax = cfg->OutMax;
 	const float OutOffset = cfg->OutOffset;
+    const float FfGain = cfg->FfGain;
+    const float RevDecay = cfg->ReverseDecay;
 
 	float prev1 = status->prev_error_1;
 	float prev2 = status->prev_error_2;
@@ -120,6 +134,14 @@ float PID_ComputeIncremental(const PID_Config_t *cfg, PID_Parameter_t *status)
 	float e = status->Target - fb;
 	status->Error = e;
 
+    /* 误差反转时衰减历史项，降低积累带来的拖尾；小误差区不衰减以避免“掉头下坠” */
+    float mag = 0.5f * (fabsf_local(e) + fabsf_local(prev1));
+    if ((e * prev1) < 0.0f && mag > 1.0f && RevDecay > 0.0f && RevDecay < 1.0f) {
+        prev1 *= RevDecay;
+        prev2 *= RevDecay;
+        last_out *= RevDecay;
+    }
+
 	/* P 项（增量形式） */
 	float p_term = Kp * (e - prev1);
 
@@ -132,20 +154,22 @@ float PID_ComputeIncremental(const PID_Config_t *cfg, PID_Parameter_t *status)
 	/* D 项二阶差分 */
 	float d_term = Kd * (e - 2.0f * prev1 + prev2);
 
-	float delta_u = p_term + i_term + d_term;
+    float delta_u = p_term + i_term + d_term;
 
-	/* 计算并限幅原始输出，尽量使用局部变量以减少写内存次数 */
-	float raw_u = last_out + delta_u;
-	if (raw_u > OutMax) raw_u = OutMax;
-	else if (raw_u < OutMin) raw_u = OutMin;
+    /* 前馈按目标比例叠加，PID 只对剩余部分工作 */
+    float ff = FfGain * status->Target;
+
+    /* 计算并限幅原始输出（含前馈） */
+    float composed = last_out + delta_u + ff;
+    composed = clamp_float(composed, OutMin, OutMax);
 
 	/* 把历史项一次性写回状态结构体（减少多次写操作） */
-	status->prev_error_2 = prev1;
-	status->prev_error_1 = e;
-	status->last_output = raw_u;
+    status->prev_error_2 = prev1;
+    status->prev_error_1 = e;
+    status->last_output = composed - ff; /* 保存 PID 部分，避免前馈重复积分 */
 
 	/* 叠加偏置并返回（偏置通常很小，直接加在最后） */
-	return raw_u + OutOffset;
+    return composed + OutOffset;
 }
 
 /* 新增实现：按环/参数修改配置（保持 static 配置体不暴露） */
@@ -157,14 +181,13 @@ static inline PID_Config_t * PID_GetConfigByLoop(int loop)
         default: return NULL;
     }
 }
-
-static inline PID_Parameter_t * PID_GetParameterByLoop(int loop)
+static inline PID_Parameter_t * PID_GetParameterByLoop(PID_Loop_enum loop, PID_Motor_enum motor)
 {
-    switch (loop) {
-        case PID_LOOP_SPEED: return &PID_Param_Speed;
-        /* case PID_LOOP_POSITION: return &PID_Config_Position; // 以后扩展 */
-        default: return NULL;
+    if (loop == PID_LOOP_SPEED) {
+        if (motor == PID_MOTOR_1) return &PID_Param_Speed[0];
+        if (motor == PID_MOTOR_2) return &PID_Param_Speed[1];
     }
+    return NULL;
 }
 
 int PID_EditConfig(PID_Loop_enum loop, PID_Config_enum param, float value)
@@ -180,6 +203,8 @@ int PID_EditConfig(PID_Loop_enum loop, PID_Config_enum param, float value)
         case PID_CONFIG_OUT_OFFSET: cfg->OutOffset = value; break;
         case PID_CONFIG_OUT_MAX: cfg->OutMax = value; break;
         case PID_CONFIG_OUT_MIN: cfg->OutMin = value; break;
+        case PID_CONFIG_FF_GAIN: cfg->FfGain = value; break;
+        case PID_CONFIG_REVERSE_DECAY: cfg->ReverseDecay = value; break;
         default:
             taskEXIT_CRITICAL();
             return -2;
@@ -189,10 +214,10 @@ int PID_EditConfig(PID_Loop_enum loop, PID_Config_enum param, float value)
 }
 
 
-int PID_GetParamTarget(PID_Loop_enum loop, float *out_value)
+int PID_GetParamTarget(PID_Loop_enum loop, PID_Motor_enum motor, float *out_value)
 {
     if (!out_value) return -3;
-    PID_Parameter_t *param = PID_GetParameterByLoop((int)loop);
+    PID_Parameter_t *param = PID_GetParameterByLoop(loop, motor);
     if (!param) return -1;
 
     taskENTER_CRITICAL();
@@ -216,6 +241,8 @@ int PID_GetConfigParam(PID_Loop_enum loop, PID_Config_enum param, float *out_val
         case PID_CONFIG_OUT_OFFSET: *out_value = cfg->OutOffset; break;
         case PID_CONFIG_OUT_MAX: *out_value = cfg->OutMax; break;
         case PID_CONFIG_OUT_MIN: *out_value = cfg->OutMin; break;
+        case PID_CONFIG_FF_GAIN: *out_value = cfg->FfGain; break;
+        case PID_CONFIG_REVERSE_DECAY: *out_value = cfg->ReverseDecay; break;
         default:
             taskEXIT_CRITICAL();
             return -2;
@@ -224,16 +251,13 @@ int PID_GetConfigParam(PID_Loop_enum loop, PID_Config_enum param, float *out_val
     return 0;
 }
 
-int PID_EditTarget(PID_Loop_enum loop, float value)
+int PID_EditTarget(PID_Loop_enum loop, PID_Motor_enum motor, float value)
 {
-    if (!value) return -3;
-    PID_Parameter_t *param = PID_GetParameterByLoop((int)loop);
+    PID_Parameter_t *param = PID_GetParameterByLoop(loop, motor);
     if (!param) return -1;
 
     taskENTER_CRITICAL();
-    
-    PID_SetTarget(param, value);
-
+        PID_SetTarget(param, value);
     taskEXIT_CRITICAL();
 
     return 0;
@@ -248,19 +272,23 @@ static void vPIDTask(void *pv)
 
     for (;;)
     {
-
-        float pct = Encoder_GetAndResetPercent();
-
         /* 写入共享 encoder 值，vCommTask 会合并发送 */
-        Comm_encoder = pct;
+        float pct = Encoder_GetAndResetPercent(ENCODER_A);
+        Comm_encoder_a = pct;
+        PID_Param_Speed[0].motor_status->SpeedInPercent = Comm_encoder_a;
 
-        PID_Param_Speed.motor_status->SpeedInPercent = Comm_encoder;
+        pct = Encoder_GetAndResetPercent(ENCODER_B);
+        Comm_encoder_b = pct;
+        PID_Param_Speed[1].motor_status->SpeedInPercent = Comm_encoder_b;
 
-        float out = PID_ComputeIncremental(&PID_Config_Speed, &PID_Param_Speed);
-        
-        Comm_out = out;
 
+        float out = PID_ComputeIncremental(&PID_Config_Speed, &PID_Param_Speed[0]);
+        Comm_out_a = out;
         Motor_SetSpeedPercent(1, out);
+
+        out = PID_ComputeIncremental(&PID_Config_Speed, &PID_Param_Speed[1]);
+        Comm_out_b = out;
+        Motor_SetSpeedPercent(2, out);
 
         vTaskDelayUntil(&last, period);
     }

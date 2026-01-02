@@ -32,8 +32,10 @@ extern volatile float Comm_roll;
 extern volatile float Comm_yaw;
 extern volatile float Comm_fps;
 extern volatile float Comm_dt_ms;
-extern volatile float Comm_encoder;
-extern volatile float Comm_out;
+extern volatile float Comm_encoder_a;
+extern volatile float Comm_encoder_b;
+extern volatile float Comm_out_a;
+extern volatile float Comm_out_b;
 
 /* 初始化通信子系统（创建队列与任务） */
 void Comm_Init(void);
