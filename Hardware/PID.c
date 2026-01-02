@@ -32,9 +32,9 @@ static void vPIDTask(void *pv);
 
 static PID_Config_t PID_Config_Speed = {
     .ErrorIntMax = 100, .ErrorIntMin = -100,
-    .Kp = 0.8f,
-    .Ki = 0.0f,
-    .Kd = 0.0f,
+    .Kp = 0.2f,
+    .Ki = 0.02f,
+    .Kd = 0.2f,
     .OutMax = 100, .OutMin = -100,
     .OutOffset = 0,
 };

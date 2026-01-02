@@ -11,10 +11,16 @@
 /* 速度低通滤波器状态（用于 butterworth2_init/process）*/
 static FilterBiquad speed_lp;
 
+static uint8_t speed_lp_ready = 0; /* 延迟到初始化完成再启用滤波 */
+
+static inline float Encoder_FilterPercent(float val)
+{
+	return speed_lp_ready ? butterworth2_process(&speed_lp, val) : val;
+
+}
 // 32 位扩展：以 16 位 CNT 为低 16 位，溢出/下溢在更新中断中累加高位
 static volatile int32_t s_ext_count_high = 0; // 以 65536 为步长的高位累计
 
-static void vEncoderTask(void *pv);
 
 // 初始化：开启端口时钟，配置 PA0/PA1 为输入，上拉/悬空按传感器而定；配置 TIM2 为编码器模式
 void Encoder_Init(void)
@@ -70,7 +76,8 @@ void Encoder_Init(void)
 	// 启动计数
 	TIM_Cmd(ENC_TIM, ENABLE);
 
-	butterworth2_init(&speed_lp, 10.0f, 50.0f);
+	butterworth2_init(&speed_lp, 10.0f, 1000.0f);
+	speed_lp_ready = 1;
 
 	/* 创建编码器后台任务，周期性读取并更新共享值 */
 	//(void)xTaskCreate(vEncoderTask, "Encoder", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
@@ -143,14 +150,16 @@ static float Encoder_RawToPercent(int32_t raw)
 float Encoder_GetCountPercent(void)
 {
 	int32_t cnt = Encoder_GetCount();
-	return Encoder_RawToPercent(cnt);
+	float pct = Encoder_RawToPercent(cnt);
+	return Encoder_FilterPercent(pct);
 }
 
 // 读取并清零累计计数，返回映射后的百分比
 float Encoder_GetAndResetPercent(void)
 {
 	int32_t cnt = Encoder_GetAndReset();
-	return Encoder_RawToPercent(cnt);
+	float pct = Encoder_RawToPercent(cnt);
+	return Encoder_FilterPercent(pct);
 }
 
 //static void vEncoderTask(void *pv)
