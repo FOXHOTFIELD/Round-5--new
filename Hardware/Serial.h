@@ -18,5 +18,6 @@ uint8_t Serial_GetRxFlag(void);
 uint8_t Serial_GetRxData(void);
 void Serial_SendPacket(const char *msg);
 void Serial_SendJustFloat(float *data, uint16_t num);
+void Serial_ProcessRxPackets(void);
 
 #endif

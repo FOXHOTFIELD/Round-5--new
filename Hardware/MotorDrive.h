@@ -36,7 +36,7 @@
 #define PWM_ARR             (2880 - 1)
 #define PWM_PSC_TIM1        (0)
 
-enum Motor_Mode
+enum Motor_Mode_t
 {
 	Motor_Mode_break = 0,       /* 快速制动（双高） */
 	Motor_Mode_stop,            /* 停止（双低） */
@@ -45,21 +45,27 @@ enum Motor_Mode
 };
 
 /* 电机状态结构体：Speed 为理论最大速度的百分比（支持小数，-100.00..100.00） */
-typedef struct
+typedef struct Motor_Status_t
 {
-	enum Motor_Mode Mode;   /* 当前模式 */
-	float           Speed;  /* 速度百分比（可带小数，-100.00..100.00；负数为反转） */
-} Motor_Status;
+	enum Motor_Mode_t Mode;   /* 当前模式 */
+	float           SpeedInPercent;  /* 速度百分比（可带小数，-100.00..100.00；负数为反转） */
+} Motor_Status_t;
 
+typedef enum Motor_STBY_t
+{
+    Disable = 0,
+    Enable  = 1,
+}Motor_STBY_t;
 
 void MD_Init(void);
 void Motor1_SetCompare(uint16_t Compare);
 void Motor2_SetCompare(uint16_t Compare);
-void Motor_SetMode(int numMotor, enum Motor_Mode Mode);
+void Motor_SetMode(int numMotor, enum Motor_Mode_t Mode);
 /* 扩大输入范围到 ±10000，与 ARR 一致 */
 void Motor_SetPWM(uint8_t index, int16_t PWM);
 /* 统一映射：按速度百分比设置（支持 xx.xx%；-100..100），自动映射到 CCR */
 void Motor_SetSpeedPercent(uint8_t index, float percent);
-void STBY_cmd(FunctionalState NewState);
+void Motor_SetStandbyState(FunctionalState NewState);
+
 
 #endif /* __MOTORDRIVE_H_ */

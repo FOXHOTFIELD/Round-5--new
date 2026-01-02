@@ -67,12 +67,12 @@ void set_trig_approx_mode(int mode) { if (mode>=TRIG_STD && mode<=TRIG_POLY) tri
 
 // 可调查表精度（编译期参数）：
 #ifndef ASIN_LUT_SIZE
-#define ASIN_LUT_SIZE 257   // [-1,1] 区间查表，线性插值
+#define ASIN_LUT_SIZE 65    // [-1,1] 区间查表，线性插值；减小表长以节省 RAM
 
 #endif
 
 #ifndef ATAN_LUT_SIZE
-#define ATAN_LUT_SIZE 257   // [0,1]  区间查表，线性插值
+#define ATAN_LUT_SIZE 65    // [0,1]  区间查表，线性插值；减小表长以节省 RAM
 
 #endif
 

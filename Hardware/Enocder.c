@@ -5,30 +5,22 @@
 // - 由于 STM32F103C8 的 TIM2 计数器为 16 位，驱动通过更新中断做 32 位软件扩展。
 
 #include "Encoder.h"
-#include "stm32f10x_gpio.h"
-#include "stm32f10x_rcc.h"
-#include "stm32f10x_tim.h"
-#include "misc.h"
 
-/*
- * 集成说明（与 stm32f10x_it.c 的关系）：
- * - 不需要修改 stm32f10x_it.h。
- * - 请在 stm32f10x_it.c 中提供 TIM2 的中断服务：
- *     void TIM2_IRQHandler(void) { Encoder_TIM2_IRQHandler(); }
- *   或者在该文件中直接定义 TIM2_IRQHandler（不推荐，统一集中 ISR 更清晰）。
- */
+#define ENC_MAX_RAW_COUNT (740)
 
-// ---------------- 引脚与外设定义（可按需调整） ----------------
-#define ENC_GPIO            GPIOA               // 编码器所在端口
-#define ENC_GPIO_RCC        RCC_APB2Periph_GPIOA// 端口时钟
-#define ENC_CH_A            GPIO_Pin_0          // A 通道 -> PA0
-#define ENC_CH_B            GPIO_Pin_1          // B 通道 -> PA1
-// 定时器选择
-#define ENC_TIM             TIM2
-#define ENC_TIM_RCC         RCC_APB1Periph_TIM2
+/* 速度低通滤波器状态（用于 butterworth2_init/process）*/
+static FilterBiquad speed_lp;
 
+static uint8_t speed_lp_ready = 0; /* 延迟到初始化完成再启用滤波 */
+
+static inline float Encoder_FilterPercent(float val)
+{
+	return speed_lp_ready ? butterworth2_process(&speed_lp, val) : val;
+
+}
 // 32 位扩展：以 16 位 CNT 为低 16 位，溢出/下溢在更新中断中累加高位
 static volatile int32_t s_ext_count_high = 0; // 以 65536 为步长的高位累计
+
 
 // 初始化：开启端口时钟，配置 PA0/PA1 为输入，上拉/悬空按传感器而定；配置 TIM2 为编码器模式
 void Encoder_Init(void)
@@ -83,11 +75,12 @@ void Encoder_Init(void)
 
 	// 启动计数
 	TIM_Cmd(ENC_TIM, ENABLE);
-}
 
-// 轮询接口在 TIM 方案下不必需；保留为空以兼容旧调用
-void Encoder_Update(void)
-{
+	butterworth2_init(&speed_lp, 10.0f, 1000.0f);
+	speed_lp_ready = 1;
+
+	/* 创建编码器后台任务，周期性读取并更新共享值 */
+	//(void)xTaskCreate(vEncoderTask, "Encoder", 256, NULL, tskIDLE_PRIORITY + 1, NULL);
 }
 
 // 原子读 32 位计数：禁用 TIM2 中断，组合高位与 CNT 后恢复
@@ -99,7 +92,7 @@ int32_t Encoder_GetCount(void)
 	high = s_ext_count_high;
 	low  = (uint16_t)TIM_GetCounter(ENC_TIM);
 	NVIC_EnableIRQ(TIM2_IRQn);
-	return (high << 16) | low;
+	return -((high << 16) | low);
 }
 
 // 设置/重置累计计数（例如清零）
@@ -139,3 +132,46 @@ void Encoder_TIM2_IRQHandler(void)
 	}
 }
 
+// 将原始计数（脉冲数/周期）映射为百分比 -100.00 .. 100.00
+static float Encoder_RawToPercent(int32_t raw)
+{
+	if (raw > ENC_MAX_RAW_COUNT) raw = ENC_MAX_RAW_COUNT;
+	if (raw < -ENC_MAX_RAW_COUNT) raw = -ENC_MAX_RAW_COUNT;
+
+	// 使用整数计算保留两位小数：p100 = round(raw * 10000 / ENC_MAX_RAW_COUNT)
+	int64_t numer = (int64_t)raw * 10000LL;
+	int64_t adj = (raw >= 0) ? (ENC_MAX_RAW_COUNT / 2) : -(ENC_MAX_RAW_COUNT / 2);
+	int32_t p100 = (int32_t)((numer + adj) / ENC_MAX_RAW_COUNT);
+
+	return (float)p100 / 100.0f;
+}
+
+// 读取当前累计计数并返回映射的百分比（不清零）
+float Encoder_GetCountPercent(void)
+{
+	int32_t cnt = Encoder_GetCount();
+	float pct = Encoder_RawToPercent(cnt);
+	return Encoder_FilterPercent(pct);
+}
+
+// 读取并清零累计计数，返回映射后的百分比
+float Encoder_GetAndResetPercent(void)
+{
+	int32_t cnt = Encoder_GetAndReset();
+	float pct = Encoder_RawToPercent(cnt);
+	return Encoder_FilterPercent(pct);
+}
+
+//static void vEncoderTask(void *pv)
+//{
+//    (void) pv;
+//
+//	for(;;)
+//	{
+//		//float pct = Encoder_GetAndResetPercent();
+//		float pct = Encoder_GetAndResetPercent();
+//		/* 写入共享 encoder 值，vCommTask 会合并发送 */
+//		Comm_encoder = pct;
+//		vTaskDelay(pdMS_TO_TICKS(100));
+//	}
+//}

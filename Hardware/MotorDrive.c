@@ -1,11 +1,11 @@
 #include "MotorDrive.h"
-#include "stm32f10x_gpio.h"
-#include "stm32f10x_rcc.h"
-#include "stm32f10x_tim.h"
-#include "misc.h"
+#include "PID.h"
+#include <stddef.h>
+
+Motor_STBY_t Motor_STBY = Disable;
 
 /* STBY 控制辅助（ENABLE=高，DISABLE=低） */
-void STBY_cmd(FunctionalState NewState)
+void Motor_SetStandbyState(FunctionalState NewState)
 {
     if (NewState == ENABLE)
     {
@@ -17,12 +17,17 @@ void STBY_cmd(FunctionalState NewState)
         /* 置低：写 BSRR 高 16 位 */
         STBY_GPIO->BSRR = (uint32_t)STBY_PIN << 16;
     }
+    
+    Motor_STBY = (Motor_STBY_t) NewState;
+
+    PID_Reset(NULL);
+
 }
 
-Motor_Status motor_status[2] =
+Motor_Status_t motor_status[2] =
 {
-    {.Mode = Motor_Mode_break, .Speed = 0.0f},
-    {.Mode = Motor_Mode_break, .Speed = 0.0f}
+    {.Mode = Motor_Mode_break, .SpeedInPercent = 0.0f},
+    {.Mode = Motor_Mode_break, .SpeedInPercent = 0.0f}
 };
 
 void MD_Init(void)
@@ -93,7 +98,7 @@ void MD_Init(void)
     GPIO_IS.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(STBY_GPIO, &GPIO_IS);
 
-    STBY_cmd(DISABLE);
+    Motor_SetStandbyState(DISABLE);
 
 
 }
@@ -124,7 +129,7 @@ void Motor2_SetCompare(uint16_t Compare)
     TIM1->CCR4 = Compare;
 }
 
-void Motor_SetMode(int numMotor, enum Motor_Mode Mode)
+void Motor_SetMode(int numMotor, enum Motor_Mode_t Mode)
 {
     if(numMotor == 1){
         switch (Mode)
@@ -217,9 +222,9 @@ void Motor_SetSpeedPercent(uint8_t index, float percent)
 
     /* 记录状态 */
     if (index == 1) {
-        motor_status[0].Speed = percent;
+        motor_status[0].SpeedInPercent = percent;
     } else if (index == 2) {
-        motor_status[1].Speed = percent;
+        motor_status[1].SpeedInPercent = percent;
     }
 
     /* 将百分比转换为百分数的整数（保留两位小数），再用整数映射到占空比 */
@@ -228,7 +233,9 @@ void Motor_SetSpeedPercent(uint8_t index, float percent)
     if (p100 < -10000) p100 = -10000;
 
     uint32_t abs100 = (p100 >= 0) ? (uint32_t)p100 : (uint32_t)(-p100);
-    uint16_t duty = (uint16_t)((abs100 * (uint32_t)PWM_ARR) / 10000U);
+    /* 将百分比均匀映射到 0..1439（包含 1439），使用整数四舍五入 */
+    const uint32_t PWM_MAP_MAX = 1439U;
+    uint16_t duty = (uint16_t)((abs100 * PWM_MAP_MAX + 5000U) / 10000U);
 
     /* 复用整数 PWM 接口，统一方向与比较寄存器设置 */
     int16_t pwm_value = (p100 >= 0) ? (int16_t)duty : -(int16_t)duty;

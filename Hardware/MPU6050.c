@@ -1,15 +1,4 @@
-#include "stm32f10x.h"
-#include "MPU6050_Reg.h"
 #include "MPU6050.h"
-#include "softi2c.h"
-#include "OLED.h"
-#include "Delay.h"
-#include "MadgwickAHRS.h"
-#include <stdlib.h>
-#include "Serial.h"
-
-#include "FreeRTOS.h"
-#include "portmacro.h"
 #include "task.h"
 
 #define MPU6050_ADDRESS    0xD0
@@ -33,29 +22,20 @@
 
 #endif
 
-#if ENABLE_DWT_FPS
-// DWT 相关静态状态
-static inline void DWT_Init(void)
-{
-	// 使能 DWT CYCCNT
-	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-	DWT->CYCCNT = 0;
-	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-}
-static inline uint32_t DWT_GetCycles(void)
-{
-	return DWT->CYCCNT;
-}
-#endif
+static void vPoseUpdateTask(void *pvParameters);
+void vMPU6050SelfCorrectTask(void *pvParameters);
 
-// 帧率统计（EMA 平滑）
-static float s_fps = 0.0f;
-static float s_dt_ms = 0.0f;
+/* DWT 帧率计算已移至 main.c 的独立任务 vDWTTask */
 
 int16_t AccX = 0, AccY = 0, AccZ = 0, GyroX = 0, GyroY = 0, GyroZ = 0;
 int16_t ax_off = 0, ay_off = 0, az_off = 0;
 int16_t gx_off = 0, gy_off = 0, gz_off = 0;
 uint8_t g_selfcorrect_finished = 0;
+
+uint8_t MPU6050_IsCalibrated(void)
+{
+	return g_selfcorrect_finished;
+}
 
 void MPU6050_StartPoseTask(void);
 
@@ -120,9 +100,7 @@ void MPU6050_Init(void)
 	// 配置姿态解算的三角函数近似模式（可选：TRIG_STD/TRIG_LUT/TRIG_POLY）
 	set_trig_approx_mode(TRIG_POLY);
 
-#if ENABLE_DWT_FPS
-	DWT_Init();
-#endif
+	/* DWT 初始化与帧率计算由 main 中的 vDWTTask 负责 */
 
 	MPU6050_WriteReg(MPU6050_PWR_MGMT_1, 0x01); // wake, set clock
 	MPU6050_WriteReg(MPU6050_PWR_MGMT_2, 0x00);
@@ -147,7 +125,12 @@ void MPU6050_Init(void)
 
     MPU6050_StartPoseTask();
 
-	MPU6050_SelfCorrect();
+	/* 创建自检任务，避免在初始化中阻塞 */
+	{
+		const uint16_t stackDepthSelf = 160; /* words */
+		const UBaseType_t prioritySelf = tskIDLE_PRIORITY + 1;
+		(void)xTaskCreate(vMPU6050SelfCorrectTask, "MPUSelf", stackDepthSelf, NULL, prioritySelf, NULL);
+	}
 }
 
 void MPU6050_GetData(int16_t *pAccX, int16_t *pAccY, int16_t *pAccZ,
@@ -180,15 +163,15 @@ void MPU6050_GetData(int16_t *pAccX, int16_t *pAccY, int16_t *pAccZ,
 static void MPU6050_SelfCorrectionProgressShow(float prgs)
 {
 	if (prgs < 1.0f) {
-		OLED_ShowNum((prgs < 0.1f ? 58 : 50), 26, (int)(prgs * 100), (prgs < 0.1f ? 1 : 2), OLED_8X16);
-		OLED_ShowString(70, 26, "%", OLED_8X16);
-		OLED_UpdateArea(26, 26, 70, 8);
-	} else {
-		OLED_UpdateArea(26, 26, 70, 8);
-		OLED_ShowString(45, 26, "fine", OLED_8X16);
-		OLED_UpdateArea(26, 26, 70, 8);
-		Delay_ms(700);
+		OLED_ShowNum((prgs < 0.1f ? 106 : 100), 0, (int)(prgs * 100), (prgs < 0.1f ? 1 : 2), OLED_6X8);
+		OLED_ShowString(112, 0, "%", OLED_6X8);
 	}
+     
+    extern TaskHandle_t xMenuShowHandle;
+    if (xMenuShowHandle != NULL)
+        xTaskNotifyGive(xMenuShowHandle);
+
+    vTaskDelay(pdMS_TO_TICKS(1));
 }
 
 void MPU6050_SelfCorrect(void)
@@ -234,13 +217,18 @@ void MPU6050_SelfCorrect(void)
 			}
 		}
 
-		if (i >= warmup && ((i - warmup) % 100 == 0)) {
+		if (i >= warmup && ((i - warmup) % 150 == 0)) {
 			float pgrs = (float)(i - warmup + 1) / (float)samples;
 			MPU6050_SelfCorrectionProgressShow(pgrs);
 		}
+
+		/* 让出 CPU 给菜单或其他低优先级任务，避免自检期间界面或交互卡死 */
+		if ((i & 0x1F) == 0) { /* every 32 iterations */
+			vTaskDelay(pdMS_TO_TICKS(1));
+		}
 	}
 
-	OLED_Clear();
+    MPU6050_SelfCorrectionProgressShow(1.0f);
 
 	const int16_t GRAVITY_LSB_1G = 16384;
 	int16_t ax_avg = (int16_t)(ax_sum / samples);
@@ -265,14 +253,8 @@ static void vPoseUpdateTask(void *pvParameters)
 	TickType_t period = (configTICK_RATE_HZ / POSE_UPDATE_HZ);
 	if (period == 0) period = 1; // 保证至少 1 tick
     
-#if ENABLE_DWT_FPS
-	static uint32_t prev_cc = 0;
-	prev_cc = DWT_GetCycles();
-#endif
-
-	uint32_t telem_cnt = 0;
 	for (;;)
-    {
+	{
         if(!g_selfcorrect_finished) {
             vTaskDelay(period);
             continue;
@@ -297,48 +279,32 @@ static void vPoseUpdateTask(void *pvParameters)
         roll  *= RAD2DEG;
         yaw   *= RAD2DEG;
 
-		// 帧率更新：用 DWT 先更新当前帧的 dt 与 fps
-	#if ENABLE_DWT_FPS
-		{
-		    uint32_t now = DWT_GetCycles();
-		    uint32_t diff = now - prev_cc; // 处理溢出按无符号减法
-		    prev_cc = now;
-		    // 将周期换算为毫秒与帧率
-		    float dt_s = (float)diff / (float)SystemCoreClock;
-		    s_dt_ms = dt_s * 1000.0f;
-		    float inst_fps = (dt_s > 0.0f) ? (1.0f / dt_s) : 0.0f;
-		    // 简单一阶 EMA 平滑
-		    const float alpha = 0.1f;
-		    s_fps = (s_fps <= 0.0f) ? inst_fps : (s_fps * (1.0f - alpha) + inst_fps * alpha);
-		}
-	#else
-		{
-		    // 无 DWT 时以期望周期估计
-		    s_dt_ms = (float)period * (1000.0f / (float)configTICK_RATE_HZ);
-		    s_fps = (s_dt_ms > 0.0f) ? (1000.0f / s_dt_ms) : 0.0f;
-		}
-	#endif
-
-    	#if ENABLE_FRAME_RATE_TELEM
-    		if ((telem_cnt++ % POSE_TELEM_DIV) == 0) {
-    			float out5[5] = {pitch, roll, yaw, s_fps, s_dt_ms};
-    			Serial_SendJustFloat(out5, 5);
-    		}
-    	#else
-    		if ((telem_cnt++ % POSE_TELEM_DIV) == 0) {
-    			float out3[3] = {pitch, roll, yaw};
-    			Serial_SendJustFloat(out3, 3);
-    		}
-    	#endif
+		/* 写入共享最新姿态值，帧率/周期(ms)由 main 中的 vDWTTask 更新 */
+		Comm_pitch = pitch;
+		Comm_roll = roll;
+		Comm_yaw = yaw;
 
 		vTaskDelayUntil(&last, period);
 
     }
 }
 
+void vMPU6050SelfCorrectTask(void *pvParameters)
+{
+	(void)pvParameters;
+	MPU6050_SelfCorrect();
+	/* 给出短延时，确保任何显示/共享变量刷新完成，然后删除自身 */
+    OLED_ClearArea(100, 0, 27, 8);
+    OLED_ShowChar(100, 0, '!', OLED_6X8);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    OLED_ClearArea(100, 0, 27, 8);
+	vTaskDelay(pdMS_TO_TICKS(20));
+	vTaskDelete(NULL);
+}
+
 void MPU6050_StartPoseTask(void)
 {
-	const uint16_t stackDepth = 512; // words
-	const UBaseType_t priority = tskIDLE_PRIORITY + 2;
+	const uint16_t stackDepth = 320; // words
+	const UBaseType_t priority = tskIDLE_PRIORITY + 1;
 	(void)xTaskCreate(vPoseUpdateTask, "Pose", stackDepth, NULL, priority, NULL);
 }

@@ -702,16 +702,6 @@
           <GroupName>Middlewares/FreeRTOS_CORE</GroupName>
           <Files>
             <File>
-              <FileName>croutine.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\MiddleWares\croutine.c</FilePath>
-            </File>
-            <File>
-              <FileName>event_groups.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\MiddleWares\event_groups.c</FilePath>
-            </File>
-            <File>
               <FileName>list.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\MiddleWares\list.c</FilePath>
@@ -720,11 +710,6 @@
               <FileName>queue.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\MiddleWares\queue.c</FilePath>
-            </File>
-            <File>
-              <FileName>stream_buffer.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\MiddleWares\stream_buffer.c</FilePath>
             </File>
             <File>
               <FileName>tasks.c</FileName>
@@ -844,21 +829,6 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>Bluetooth</GroupName>
-          <Files>
-            <File>
-              <FileName>Serial.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\Hardware\Serial.c</FilePath>
-            </File>
-            <File>
-              <FileName>Serial.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\Hardware\Serial.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
           <GroupName>Motor</GroupName>
           <Files>
             <File>
@@ -880,6 +850,56 @@
               <FileName>MotorDrive.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\Hardware\MotorDrive.h</FilePath>
+            </File>
+            <File>
+              <FileName>PID.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\PID.c</FilePath>
+            </File>
+            <File>
+              <FileName>PID.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\PID.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Filter</GroupName>
+          <Files>
+            <File>
+              <FileName>filter.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\System\filter.c</FilePath>
+            </File>
+            <File>
+              <FileName>filter.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\System\filter.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Communication</GroupName>
+          <Files>
+            <File>
+              <FileName>comm.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\System\comm.c</FilePath>
+            </File>
+            <File>
+              <FileName>comm.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\System\comm.h</FilePath>
+            </File>
+            <File>
+              <FileName>Serial.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\Serial.c</FilePath>
+            </File>
+            <File>
+              <FileName>Serial.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\Serial.h</FilePath>
             </File>
           </Files>
         </Group>
