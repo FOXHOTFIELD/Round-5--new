@@ -19,6 +19,23 @@
 
 #include "comm.h"
 #include "filter.h"
+/*
+ * 集成说明（与 stm32f10x_it.c 的关系）：
+ * - 不需要修改 stm32f10x_it.h。
+ * - 请在 stm32f10x_it.c 中提供 TIM2 的中断服务：
+ *     void TIM2_IRQHandler(void) { Encoder_TIM2_IRQHandler(); }
+ *   或者在该文件中直接定义 TIM2_IRQHandler（不推荐，统一集中 ISR 更清晰）。
+ */
+
+// ---------------- 引脚与外设定义（可按需调整） ----------------
+#define ENC_GPIO            GPIOA               // 编码器所在端口
+#define ENC_GPIO_RCC        RCC_APB2Periph_GPIOA// 端口时钟
+#define ENC_CH_A            GPIO_Pin_0          // A 通道 -> PA0
+#define ENC_CH_B            GPIO_Pin_1          // B 通道 -> PA1
+// 定时器选择
+#define ENC_TIM             TIM2
+#define ENC_TIM_RCC         RCC_APB1Periph_TIM2
+
 
 // 初始化编码器引脚：PA0/PA1 设为上拉输入
 void Encoder_Init(void);

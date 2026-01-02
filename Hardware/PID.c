@@ -250,6 +250,7 @@ static void vPIDTask(void *pv)
     {
 
         float pct = Encoder_GetAndResetPercent();
+
         /* 写入共享 encoder 值，vCommTask 会合并发送 */
         Comm_encoder = pct;
 
