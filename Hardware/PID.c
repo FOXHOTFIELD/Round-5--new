@@ -39,14 +39,14 @@ static PID_Config_t PID_Config_Speed = {
     .OutOffset = 0,
 };
 
-static PID_Parameter_t PID_Para_Speed;
+static PID_Parameter_t PID_Param_Speed;
 extern Motor_Status_t motor_status[2];
 
 void PID_Init(void)
 {
-    PID_Reset(&PID_Para_Speed);
-    PID_AttachMotor(&PID_Para_Speed, motor_status);
-    PID_SetTarget(&PID_Para_Speed, 20.0f);
+    PID_Reset(&PID_Param_Speed);
+    PID_AttachMotor(&PID_Param_Speed, motor_status);
+    PID_SetTarget(&PID_Param_Speed, 20.0f);
     
     xTaskCreate(vPIDTask, "PIDTask", 160, NULL, tskIDLE_PRIORITY+1, NULL);
 }
@@ -69,7 +69,7 @@ void PID_Reset(PID_Parameter_t *para)
 	 * 在开始控制或更换目标值跨度较大时，可调用以避免历史残留影响。
 	 */
 	if (para == NULL)
-        para = &PID_Para_Speed;
+        para = &PID_Param_Speed;
 
 	para->Error = 0.0f;
 	para->prev_error_1 = 0.0f;
@@ -158,19 +158,28 @@ static inline PID_Config_t * PID_GetConfigByLoop(int loop)
     }
 }
 
-int PID_EditConfig(PID_Loop_enum loop, PID_Param_enum param, float value)
+static inline PID_Parameter_t * PID_GetParameterByLoop(int loop)
+{
+    switch (loop) {
+        case PID_LOOP_SPEED: return &PID_Param_Speed;
+        /* case PID_LOOP_POSITION: return &PID_Config_Position; // 以后扩展 */
+        default: return NULL;
+    }
+}
+
+int PID_EditConfig(PID_Loop_enum loop, PID_Config_enum param, float value)
 {
     PID_Config_t *cfg = PID_GetConfigByLoop((int)loop);
     if (!cfg) return -1;
 
     taskENTER_CRITICAL();
     switch (param) {
-        case PID_PARAM_KP: cfg->Kp = value; break;
-        case PID_PARAM_KI: cfg->Ki = value; break;
-        case PID_PARAM_KD: cfg->Kd = value; break;
-        case PID_PARAM_OUT_OFFSET: cfg->OutOffset = value; break;
-        case PID_PARAM_OUT_MAX: cfg->OutMax = value; break;
-        case PID_PARAM_OUT_MIN: cfg->OutMin = value; break;
+        case PID_CONFIG_KP: cfg->Kp = value; break;
+        case PID_CONFIG_KI: cfg->Ki = value; break;
+        case PID_CONFIG_KD: cfg->Kd = value; break;
+        case PID_CONFIG_OUT_OFFSET: cfg->OutOffset = value; break;
+        case PID_CONFIG_OUT_MAX: cfg->OutMax = value; break;
+        case PID_CONFIG_OUT_MIN: cfg->OutMin = value; break;
         default:
             taskEXIT_CRITICAL();
             return -2;
@@ -179,7 +188,21 @@ int PID_EditConfig(PID_Loop_enum loop, PID_Param_enum param, float value)
     return 0;
 }
 
-int PID_GetConfigParam(PID_Loop_enum loop, PID_Param_enum param, float *out_value)
+
+int PID_GetParamTarget(PID_Loop_enum loop, float *out_value)
+{
+    if (!out_value) return -3;
+    PID_Parameter_t *param = PID_GetParameterByLoop((int)loop);
+    if (!param) return -1;
+
+    taskENTER_CRITICAL();
+        *out_value = param->Target;
+    taskEXIT_CRITICAL();
+
+    return 0;
+}
+
+int PID_GetConfigParam(PID_Loop_enum loop, PID_Config_enum param, float *out_value)
 {
     if (!out_value) return -3;
     PID_Config_t *cfg = PID_GetConfigByLoop((int)loop);
@@ -187,17 +210,32 @@ int PID_GetConfigParam(PID_Loop_enum loop, PID_Param_enum param, float *out_valu
 
     taskENTER_CRITICAL();
     switch (param) {
-        case PID_PARAM_KP: *out_value = cfg->Kp; break;
-        case PID_PARAM_KI: *out_value = cfg->Ki; break;
-        case PID_PARAM_KD: *out_value = cfg->Kd; break;
-        case PID_PARAM_OUT_OFFSET: *out_value = cfg->OutOffset; break;
-        case PID_PARAM_OUT_MAX: *out_value = cfg->OutMax; break;
-        case PID_PARAM_OUT_MIN: *out_value = cfg->OutMin; break;
+        case PID_CONFIG_KP: *out_value = cfg->Kp; break;
+        case PID_CONFIG_KI: *out_value = cfg->Ki; break;
+        case PID_CONFIG_KD: *out_value = cfg->Kd; break;
+        case PID_CONFIG_OUT_OFFSET: *out_value = cfg->OutOffset; break;
+        case PID_CONFIG_OUT_MAX: *out_value = cfg->OutMax; break;
+        case PID_CONFIG_OUT_MIN: *out_value = cfg->OutMin; break;
         default:
             taskEXIT_CRITICAL();
             return -2;
     }
     taskEXIT_CRITICAL();
+    return 0;
+}
+
+int PID_EditTarget(PID_Loop_enum loop, float value)
+{
+    if (!value) return -3;
+    PID_Parameter_t *param = PID_GetParameterByLoop((int)loop);
+    if (!param) return -1;
+
+    taskENTER_CRITICAL();
+    
+    PID_SetTarget(param, value);
+
+    taskEXIT_CRITICAL();
+
     return 0;
 }
 
@@ -215,9 +253,9 @@ static void vPIDTask(void *pv)
         /* 写入共享 encoder 值，vCommTask 会合并发送 */
         Comm_encoder = pct;
 
-        PID_Para_Speed.motor_status->SpeedInPercent = Comm_encoder;
+        PID_Param_Speed.motor_status->SpeedInPercent = Comm_encoder;
 
-        float out = PID_ComputeIncremental(&PID_Config_Speed, &PID_Para_Speed);
+        float out = PID_ComputeIncremental(&PID_Config_Speed, &PID_Param_Speed);
         
         Comm_out = out;
 

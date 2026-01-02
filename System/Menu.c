@@ -367,13 +367,22 @@ static void vMenu_ReadCommandFromSerial(void *pv)
             // 在这里按你的协议解析 payload
             
             PID_Loop_enum idx_loop;
-            PID_Param_enum idx_param;
+            PID_Config_enum idx_param;
             float val;
             int loop_i, param_i;
             if (sscanf((const char*)msg.payload, "%d,%d,%f", &loop_i, &param_i, &val) == 3) {
                 idx_loop = (PID_Loop_enum)loop_i;
-                idx_param = (PID_Param_enum)param_i;
-                PID_EditConfig(idx_loop, idx_param, val);
+                idx_param = (PID_Config_enum)param_i;
+                if (param_i != -1)
+                {
+                    PID_EditConfig(idx_loop, idx_param, val);
+                }else
+                {
+                    PID_EditTarget(idx_loop, val);
+                }
+                
+                
+                Menu_Flag = 1;
             }
         }
     }

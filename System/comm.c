@@ -80,11 +80,13 @@ static void vCommTask(void *pv)
         PID_GetConfigParam(0, 0, out + 7);
         PID_GetConfigParam(0, 1, out + 8);
         PID_GetConfigParam(0, 2, out + 9);
+        PID_GetParamTarget(0, out + 10);
 
         /* 附加: 当前堆剩余与历史最小堆剩余（Bytes） */
-        out[10] = (float)xPortGetFreeHeapSize();
-        out[11] = (float)xPortGetMinimumEverFreeHeapSize();
-        Serial_SendJustFloat(out, 12);
+//       out[10] = (float)xPortGetFreeHeapSize();
+//        out[11] = (float)xPortGetMinimumEverFreeHeapSize();
+       //out[10] = (float)xPortGetFreeHeapSize();
+        Serial_SendJustFloat(out, 11);
 
         Serial_ProcessRxPackets();
 

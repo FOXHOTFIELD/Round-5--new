@@ -16,13 +16,12 @@ static void vLedMonitorTask(void *pvParameters)
 	for (;;)
 	{
 		/* PC13 在多数板子上为低电平点亮，故当 Cursor_Index==1 时输出低电平（ResetBits） */
-		if (Menu_Flag != 1)
+		if (Menu_Flag == 1)
 		{
 			GPIO_ResetBits(GPIOC, GPIO_Pin_13); /* 点亮 */
-		}
-		else
-		{
-			GPIO_SetBits(GPIOC, GPIO_Pin_13); /* 熄灭 */
+            vTaskDelay(pdMS_TO_TICKS(100));
+            GPIO_SetBits(GPIOC, GPIO_Pin_13);
+            Menu_Flag = 0;
 		}
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}

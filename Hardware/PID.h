@@ -58,20 +58,23 @@ typedef enum {
 } PID_Loop_enum;
 
 typedef enum {
-    PID_PARAM_KP = 0,
-    PID_PARAM_KI = 1,
-    PID_PARAM_KD = 2,
-    PID_PARAM_OUT_OFFSET = 3,
-    PID_PARAM_OUT_MAX = 4,
-    PID_PARAM_OUT_MIN = 5,
-} PID_Param_enum;
+    PID_CONFIG_KP = 0,
+    PID_CONFIG_KI = 1,
+    PID_CONFIG_KD = 2,
+    PID_CONFIG_OUT_OFFSET = 3,
+    PID_CONFIG_OUT_MAX = 4,
+    PID_CONFIG_OUT_MIN = 5,
+} PID_Config_enum;
 
 /* 通用编辑接口：指定环与参数进行修改（线程安全） */
 /* 返回 0 成功，负值表示错误（-1: 未知环， -2: 未知参数） */
-int PID_EditConfig(PID_Loop_enum loop, PID_Param_enum param, float value);
+int PID_EditConfig(PID_Loop_enum loop, PID_Config_enum param, float value);
 
 /* 可选：读取参数（线程安全） */
-int PID_GetConfigParam(PID_Loop_enum loop, PID_Param_enum param, float *out_value);
+int PID_GetConfigParam(PID_Loop_enum loop, PID_Config_enum param, float *out_value);
 
+int PID_GetParamTarget(PID_Loop_enum loop, float *out_value);
+
+int PID_EditTarget(PID_Loop_enum loop, float value);
 
 #endif
