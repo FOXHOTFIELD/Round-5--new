@@ -36,6 +36,7 @@ extern volatile float Comm_encoder_a;
 extern volatile float Comm_encoder_b;
 extern volatile float Comm_out_a;
 extern volatile float Comm_out_b;
+extern volatile float Comm_pose_tag;
 
 /* 初始化通信子系统（创建队列与任务） */
 void Comm_Init(void);

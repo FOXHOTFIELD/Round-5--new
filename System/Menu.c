@@ -366,25 +366,31 @@ static void vMenu_ReadCommandFromSerial(void *pv)
             // msg.len 为有效长度，msg.payload 为原始负载
             // 在这里按你的协议解析 payload
             
-            PID_Loop_enum idx_loop;
-            PID_Config_enum idx_param;
-            PID_Motor_enum idx_motor;
-            float val;
-            int loop_i, param_i, motor_i = 1;
+            float val = 0.0f;
+            int loop_i = -1, param_i = -1, motor_i = -1;
             int parsed = sscanf((const char*)msg.payload, "%d,%d,%d,%f", &loop_i, &param_i, &motor_i, &val);
-            if (parsed >= 3) {
-                idx_loop = (PID_Loop_enum)loop_i;
-                idx_param = (PID_Config_enum)param_i;
-                idx_motor = (motor_i == 0) ? PID_MOTOR_1 : PID_MOTOR_2;
-                if (param_i != -1)
+            if (parsed == 4)
+            {
+                PID_Loop_enum idx_loop = (PID_Loop_enum)loop_i;
+                PID_Config_enum idx_param = (PID_Config_enum)param_i;
+                PID_Motor_enum idx_motor = (motor_i == 0) ? PID_MOTOR_1 : PID_MOTOR_2;
+
+                /* 姿态环不区分左右电机，直接复用第一路枚举 */
+                if (idx_loop == PID_LOOP_ATTITUDE)
+                    idx_motor = PID_MOTOR_1;
+
+                if (param_i >= 0)
                 {
+                    /* 调整 PID 参数：loop(0速度/1姿态), param(0/1/2... 对应 KP/KI/KD/...) */
                     PID_EditConfig(idx_loop, idx_param, val);
-                }else if (motor_i != -1)
-                {
-                    PID_EditTarget(idx_loop, idx_motor, val);
+                    Menu_Flag = 1;
                 }
-               
-                Menu_Flag = 1;
+                else
+                {
+                    /* param 为 -1 时修改目标值：速度环 target 或姿态环平衡角 target */
+                    PID_EditTarget(idx_loop, idx_motor, val);
+                    Menu_Flag = 1;
+                }
             }
         }
     }

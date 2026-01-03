@@ -28,9 +28,11 @@ void MPU6050_GetData(int16_t *AccX, int16_t *AccY, int16_t *AccZ,
 /* 返回 1 表示自检/校准完成，姿态数据可安全输出 */
 uint8_t MPU6050_IsCalibrated(void);
 
+void MPU6050_GetPose(void);
+
 extern int16_t AccX, AccY, AccZ, GyroX, GyroY, GyroZ;
 extern int16_t ax_off, ay_off, az_off;
 extern int16_t gx_off, gy_off, gz_off;
-extern uint8_t g_selfcorrect_finished;
+extern volatile uint8_t g_selfcorrect_finished;
 
 #endif

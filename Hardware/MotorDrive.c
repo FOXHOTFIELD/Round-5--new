@@ -24,11 +24,13 @@ void Motor_SetStandbyState(FunctionalState NewState)
     {
         /* 置高：写 BSRR 低 16 位 */
         STBY_GPIO->BSRR = STBY_PIN;
+        GPIO_ResetBits(GPIOC, GPIO_Pin_13); /* 点亮 */
     }
     else
     {
         /* 置低：写 BSRR 高 16 位 */
         STBY_GPIO->BSRR = (uint32_t)STBY_PIN << 16;
+        GPIO_SetBits(GPIOC, GPIO_Pin_13); /* 熄灭 */
     }
     
     Motor_STBY = (Motor_STBY_t) NewState;

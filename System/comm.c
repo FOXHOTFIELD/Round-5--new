@@ -22,6 +22,7 @@ volatile float Comm_encoder_a = 0.0f; //在速度环pid任务中更新
 volatile float Comm_encoder_b = 0.0f; //在速度环pid任务中更新
 volatile float Comm_out_a = 0.0f; //在速度环pid任务中更新
 volatile float Comm_out_b = 0.0f; //在速度环pid任务中更新
+volatile float Comm_pose_tag = 0.0f; //在姿态环pid任务中更新
 
 /* DWT 工具 */
 static inline void DWT_Init(void)
@@ -71,7 +72,7 @@ static void vCommTask(void *pv)
     (void)pv;
     for (;;)
     {
-        float msg[12];
+        float msg[13];
         msg[0] = Comm_pitch;
         msg[1] = Comm_roll;
         msg[2] = Comm_yaw;
@@ -81,17 +82,19 @@ static void vCommTask(void *pv)
         msg[4] = Comm_out_a;
         msg[5] = Comm_encoder_b;
         msg[6] = Comm_out_b;
-        PID_GetConfigParam(0, 0, msg + 7);
-        PID_GetConfigParam(0, 1, msg + 8);
-        PID_GetConfigParam(0, 2, msg + 9);
+        /* 传输姿态环 PID（KP/KI/KD）参数，供上位机显示/记录 */
+        PID_GetConfigParam(PID_LOOP_ATTITUDE, PID_CONFIG_KP, msg + 7);
+        PID_GetConfigParam(PID_LOOP_ATTITUDE, PID_CONFIG_KI, msg + 8);
+        PID_GetConfigParam(PID_LOOP_ATTITUDE, PID_CONFIG_KD, msg + 9);
         PID_GetParamTarget(PID_LOOP_SPEED, PID_MOTOR_1, msg + 10);
         PID_GetParamTarget(PID_LOOP_SPEED, PID_MOTOR_2, msg + 11);
+        msg[12] = Comm_pose_tag;
 
         /* 附加: 当前堆剩余与历史最小堆剩余（Bytes） */
 //       msg[10] = (float)xPortGetFreeHeapSize();
 //        msg[11] = (float)xPortGetMinimumEverFreeHeapSize();
        //msg[10] = (float)xPortGetFreeHeapSize();
-        Serial_SendJustFloat(msg, 12);
+        Serial_SendJustFloat(msg, 13);
 
         Serial_ProcessRxPackets();
 
@@ -106,7 +109,7 @@ void Comm_Init(void)
         xCommQueue = xQueueCreate(3, sizeof(CommMsg_t));
     }
     /* 创建任务：DWT 优先级略高以保证频率测量稳定 */
-    if (xTaskCreate(vDWTTask, "DWT", 128, NULL, tskIDLE_PRIORITY + 3, NULL) != pdPASS) {
-    }
+    //if (xTaskCreate(vDWTTask, "DWT", 128, NULL, tskIDLE_PRIORITY + 3, NULL) != pdPASS) {
+    //}
     xTaskCreate(vCommTask, "Comm", 196, NULL, tskIDLE_PRIORITY + 2, NULL);
 }

@@ -1,6 +1,7 @@
 #include "PID.h"
 #include "comm.h"
 #include "Encoder.h"
+#include "MPU6050.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -36,16 +37,29 @@ static void vPIDTask(void *pv);
 
 static PID_Config_t PID_Config_Speed = {
     .ErrorIntMax = 100, .ErrorIntMin = -100,
-    .Kp = 0.2f,
-    .Ki = 0.02f,
-    .Kd = 0.2f,
+    .Kp = 0.35f,   /* 提高比例，加快跟随 */
+    .Ki = 0.015f,  /* 略降积分，避免高比例下过冲 */
+    .Kd = 0.25f,   /* 略加微分，抑制快变抖动 */
     .OutMax = 100, .OutMin = -100,
     .OutOffset = 0,
-    .FfGain = 0.35f,
-    .ReverseDecay = 0.5f,
+    .FfGain = 0.45f,  /* 增强目标前馈，减少纯 PID 耗时 */
+    .ReverseDecay = 0.4f,
+};
+
+/* 姿态环（俯仰角 -> 期望速度），输出直接作为速度环 Target 使用 */
+static PID_Config_t PID_Config_Attitude = {
+    .ErrorIntMax = 15, .ErrorIntMin = -15,
+    .Kp = 2.0f,   /* 降低比例，先压震荡 */
+    .Ki = 0.05f,  /* 大幅减小积分，防止靠近 0° 时积累输出 */
+    .Kd = 1.2f,   /* 保持微分抑制快速倾倒 */
+    .OutMax = 60, .OutMin = -60, /* 收紧速度设定，避免过冲 */
+    .OutOffset = 0,
+    .FfGain = 0.0f,
+    .ReverseDecay = 0.6f, /* 误差翻转时快速衰减历史项/输出，减弱“打摆” */
 };
 
 static PID_Parameter_t PID_Param_Speed[PID_SPEED_MOTOR_COUNT];
+static PID_Parameter_t PID_Param_Attitude;
 extern Motor_Status_t motor_status[2];
 
 void PID_Init(void)
@@ -55,6 +69,10 @@ void PID_Init(void)
         PID_Reset(&PID_Param_Speed[i]);
         PID_AttachMotor(&PID_Param_Speed[i], motor_status + i);
     }
+
+    /* 姿态环：默认目标为 0° 直立，反馈由 MPU6050 写入 Comm_pitch */
+    PID_Reset(&PID_Param_Attitude);
+    PID_SetTarget(&PID_Param_Attitude, 0.0f);
     
     xTaskCreate(vPIDTask, "PIDTask", 160, NULL, tskIDLE_PRIORITY+2, NULL);
 }
@@ -82,6 +100,7 @@ void PID_Reset(PID_Parameter_t *para)
         {
             PID_Reset(&PID_Param_Speed[i]);
         }
+        PID_Reset(&PID_Param_Attitude);
         return;
     }
 
@@ -108,31 +127,47 @@ void PID_SetTarget(PID_Parameter_t *status, float target)
 	status->Target = target;
 }
 
-float PID_ComputeIncremental(const PID_Config_t *cfg, PID_Parameter_t *status)
+static float PID_ComputeIncremental_Internal(const PID_Config_t *cfg, PID_Parameter_t *status, float feedback, uint8_t use_feedback_override)
 {
-	if (!cfg || !status) return 0.0f;
+    if (!cfg || !status) return 0.0f;
 
-	/* 性能优化：缓存频繁访问的字段到局部变量，减少结构体读写次数 */
-	const float Kp = cfg->Kp;
-	const float Ki = cfg->Ki;
-	const float Kd = cfg->Kd;
-	const float OutMin = cfg->OutMin;
-	const float OutMax = cfg->OutMax;
-	const float OutOffset = cfg->OutOffset;
+    /* 性能优化：缓存频繁访问的字段到局部变量，减少结构体读写次数 */
+    const float Kp = cfg->Kp;
+    const float Ki = cfg->Ki;
+    const float Kd = cfg->Kd;
+    const float OutMin = cfg->OutMin;
+    const float OutMax = cfg->OutMax;
+    const float OutOffset = cfg->OutOffset;
     const float FfGain = cfg->FfGain;
     const float RevDecay = cfg->ReverseDecay;
 
-	float prev1 = status->prev_error_1;
-	float prev2 = status->prev_error_2;
-	float last_out = status->last_output;
+    float prev1 = status->prev_error_1;
+    float prev2 = status->prev_error_2;
+    float last_out = status->last_output;
 
-	/* 读取反馈并计算误差（尽量只读一次 motor_status 指针） */
-	float fb = 0.0f;
-	Motor_Status_t *ms = status->motor_status;
-	if (ms) fb = ms->SpeedInPercent;
+    /* 读取反馈：默认用 motor_status 速度；姿态环走外部反馈 */
+    float fb = 0.0f;
+    if (use_feedback_override) {
+        fb = feedback;
+    } else {
+        Motor_Status_t *ms = status->motor_status;
+        if (ms) fb = ms->SpeedInPercent;
+    }
 
-	float e = status->Target - fb;
-	status->Error = e;
+    float e = status->Target - fb;
+    status->Error = e;
+
+    /* 姿态环防“靠近 0 度仍有大输出”：在小角度死区内衰减历史项并清积分来源 */
+    if (use_feedback_override) {
+        const float deadband = 0.6f; /* 允许的姿态死区（度） */
+        if (fabsf_local(e) < deadband) {
+            e = 0.0f;
+            /* 清掉已积累的历史，避免“顶着”输出不回零 */
+            prev1 *= 0.3f;
+            prev2 *= 0.3f;
+            last_out *= 0.3f;
+        }
+    }
 
     /* 误差反转时衰减历史项，降低积累带来的拖尾；小误差区不衰减以避免“掉头下坠” */
     float mag = 0.5f * (fabsf_local(e) + fabsf_local(prev1));
@@ -142,17 +177,17 @@ float PID_ComputeIncremental(const PID_Config_t *cfg, PID_Parameter_t *status)
         last_out *= RevDecay;
     }
 
-	/* P 项（增量形式） */
-	float p_term = Kp * (e - prev1);
+    /* P 项（增量形式） */
+    float p_term = Kp * (e - prev1);
 
-	/* 对积分项使用误差限幅以限制积分累积（避免风up），改为使用配置中的 ErrorIntMin/Max */
-	float e_i = e;
-	if (e_i > cfg->ErrorIntMax) e_i = cfg->ErrorIntMax;
-	else if (e_i < cfg->ErrorIntMin) e_i = cfg->ErrorIntMin;
-	float i_term = Ki * e_i;
+    /* 对积分项使用误差限幅以限制积分累积（避免风up），改为使用配置中的 ErrorIntMin/Max */
+    float e_i = e;
+    if (e_i > cfg->ErrorIntMax) e_i = cfg->ErrorIntMax;
+    else if (e_i < cfg->ErrorIntMin) e_i = cfg->ErrorIntMin;
+    float i_term = Ki * e_i;
 
-	/* D 项二阶差分 */
-	float d_term = Kd * (e - 2.0f * prev1 + prev2);
+    /* D 项二阶差分 */
+    float d_term = Kd * (e - 2.0f * prev1 + prev2);
 
     float delta_u = p_term + i_term + d_term;
 
@@ -163,13 +198,23 @@ float PID_ComputeIncremental(const PID_Config_t *cfg, PID_Parameter_t *status)
     float composed = last_out + delta_u + ff;
     composed = clamp_float(composed, OutMin, OutMax);
 
-	/* 把历史项一次性写回状态结构体（减少多次写操作） */
+    /* 把历史项一次性写回状态结构体（减少多次写操作） */
     status->prev_error_2 = prev1;
     status->prev_error_1 = e;
     status->last_output = composed - ff; /* 保存 PID 部分，避免前馈重复积分 */
 
-	/* 叠加偏置并返回（偏置通常很小，直接加在最后） */
+    /* 叠加偏置并返回（偏置通常很小，直接加在最后） */
     return composed + OutOffset;
+}
+
+float PID_ComputeIncremental(const PID_Config_t *cfg, PID_Parameter_t *status)
+{
+    return PID_ComputeIncremental_Internal(cfg, status, 0.0f, 0);
+}
+
+float PID_ComputeIncrementalWithFeedback(const PID_Config_t *cfg, PID_Parameter_t *status, float feedback)
+{
+    return PID_ComputeIncremental_Internal(cfg, status, feedback, 1);
 }
 
 /* 新增实现：按环/参数修改配置（保持 static 配置体不暴露） */
@@ -177,6 +222,7 @@ static inline PID_Config_t * PID_GetConfigByLoop(int loop)
 {
     switch (loop) {
         case PID_LOOP_SPEED: return &PID_Config_Speed;
+        case PID_LOOP_ATTITUDE: return &PID_Config_Attitude;
         /* case PID_LOOP_POSITION: return &PID_Config_Position; // 以后扩展 */
         default: return NULL;
     }
@@ -186,6 +232,10 @@ static inline PID_Parameter_t * PID_GetParameterByLoop(PID_Loop_enum loop, PID_M
     if (loop == PID_LOOP_SPEED) {
         if (motor == PID_MOTOR_1) return &PID_Param_Speed[0];
         if (motor == PID_MOTOR_2) return &PID_Param_Speed[1];
+    }
+    if (loop == PID_LOOP_ATTITUDE) {
+        (void)motor; /* 姿态环与具体电机无关，忽略电机索引 */
+        return &PID_Param_Attitude;
     }
     return NULL;
 }
@@ -272,14 +322,25 @@ static void vPIDTask(void *pv)
 
     for (;;)
     {
+        /* 姿态环：读取俯仰角，输出期望速度，传给左右电机速度环 */
+        float pitch_deg = 0.0f;
+        taskENTER_CRITICAL();
+            pitch_deg = Comm_pitch;
+        taskEXIT_CRITICAL();
+
+        float speed_target = PID_ComputeIncrementalWithFeedback(&PID_Config_Attitude, &PID_Param_Attitude, pitch_deg);
+        PID_Param_Speed[0].Target = speed_target;
+        PID_Param_Speed[1].Target = speed_target;
+        Comm_pose_tag = speed_target;
+
         /* 写入共享 encoder 值，vCommTask 会合并发送 */
         float pct = Encoder_GetAndResetPercent(ENCODER_A);
         Comm_encoder_a = pct;
-        PID_Param_Speed[0].motor_status->SpeedInPercent = Comm_encoder_a;
+        PID_Param_Speed[0].motor_status->SpeedInPercent = pct;
 
         pct = Encoder_GetAndResetPercent(ENCODER_B);
         Comm_encoder_b = pct;
-        PID_Param_Speed[1].motor_status->SpeedInPercent = Comm_encoder_b;
+        PID_Param_Speed[1].motor_status->SpeedInPercent = pct;
 
 
         float out = PID_ComputeIncremental(&PID_Config_Speed, &PID_Param_Speed[0]);

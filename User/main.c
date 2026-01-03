@@ -8,23 +8,27 @@
 extern MenuStatus_t Menu_Status;
 
 #ifdef LEDtest
-/* LED 监控任务：当 Menu_Status.Cursor_Index == 1 时点亮 PC13，否则熄灭 */
+/*led由Motor_SetStandbyState控制*/
 static void vLedMonitorTask(void *pvParameters)
 {
 	(void)pvParameters;
-    extern uint8_t Menu_Flag;
 	for (;;)
 	{
-		/* PC13 在多数板子上为低电平点亮，故当 Cursor_Index==1 时输出低电平（ResetBits） */
-		if (Menu_Flag == 1)
-		{
-			GPIO_ResetBits(GPIOC, GPIO_Pin_13); /* 点亮 */
-            vTaskDelay(pdMS_TO_TICKS(100));
-            GPIO_SetBits(GPIOC, GPIO_Pin_13);
-            Menu_Flag = 0;
-		}
-		vTaskDelay(pdMS_TO_TICKS(100));
-	}
+        if (Comm_pitch > 40 || Comm_pitch < -40)
+        {
+            Motor_SetStandbyState(DISABLE);
+        }
+
+        //	/* PC13 在多数板子上为低电平点亮，故当 Cursor_Index==1 时输出低电平（ResetBits） */
+        //	if (Menu_Flag == 1)
+        //	{
+        //		GPIO_ResetBits(GPIOC, GPIO_Pin_13); /* 点亮 */
+        //        vTaskDelay(pdMS_TO_TICKS(100));
+        //        GPIO_SetBits(GPIOC, GPIO_Pin_13);
+        //        Menu_Flag = 0;
+        //	}
+        //	vTaskDelay(pdMS_TO_TICKS(100));
+    }
 }
 #endif
 
@@ -47,7 +51,7 @@ int main(void)
     MD_Init();
 	Comm_Init();
     PID_Init();
-    Motor_SetStandbyState(ENABLE);
+    //Motor_SetStandbyState(ENABLE);
 
     #ifdef LEDtest
         /* 使能 GPIOC 时钟并配置 PC13 为推挽输出 */

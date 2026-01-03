@@ -30,7 +30,7 @@ void vMPU6050SelfCorrectTask(void *pvParameters);
 int16_t AccX = 0, AccY = 0, AccZ = 0, GyroX = 0, GyroY = 0, GyroZ = 0;
 int16_t ax_off = 0, ay_off = 0, az_off = 0;
 int16_t gx_off = 0, gy_off = 0, gz_off = 0;
-uint8_t g_selfcorrect_finished = 0;
+volatile uint8_t g_selfcorrect_finished = 0; /* shared between calibration and pose tasks */
 
 uint8_t MPU6050_IsCalibrated(void)
 {
@@ -228,7 +228,7 @@ void MPU6050_SelfCorrect(void)
 		}
 	}
 
-    MPU6050_SelfCorrectionProgressShow(1.0f);
+	MPU6050_SelfCorrectionProgressShow(1.0f);
 
 	const int16_t GRAVITY_LSB_1G = 16384;
 	int16_t ax_avg = (int16_t)(ax_sum / samples);
@@ -263,7 +263,7 @@ static void vPoseUpdateTask(void *pvParameters)
         MPU6050_GetData(&AccX, &AccY, &AccZ, &GyroX, &GyroY, &GyroZ);
 
         // 如果陀螺是度/秒，请先转换：
-        const float DEG2RAD = 3.14159265358979323846f / 180.0f;
+        const float DEG2RAD =M_PI / 180.0f;
         // MPU6050 陀螺仪在±2000°/s量程下的灵敏度为 16.4 LSB/(°/s)
         float gx_rad = (GyroX / 16.4f) * DEG2RAD;
         float gy_rad = (GyroY / 16.4f) * DEG2RAD;
@@ -274,18 +274,18 @@ static void vPoseUpdateTask(void *pvParameters)
         quat_to_euler_zyx(q0, q1, q2, q3, &yaw, &pitch, &roll);
 
         //
-        const float RAD2DEG = 180.0f / 3.14159265358979323846f;
+        const float RAD2DEG = 180.0f / M_PI;
         pitch *= RAD2DEG;
         roll  *= RAD2DEG;
         yaw   *= RAD2DEG;
 
-		/* 写入共享最新姿态值，帧率/周期(ms)由 main 中的 vDWTTask 更新 */
-		Comm_pitch = pitch;
-		Comm_roll = roll;
-		Comm_yaw = yaw;
+        taskENTER_CRITICAL();
+            Comm_pitch = pitch;
+            Comm_roll = roll;
+            Comm_yaw = yaw;
+        taskEXIT_CRITICAL();
 
 		vTaskDelayUntil(&last, period);
-
     }
 }
 
@@ -307,4 +307,35 @@ void MPU6050_StartPoseTask(void)
 	const uint16_t stackDepth = 320; // words
 	const UBaseType_t priority = tskIDLE_PRIORITY + 1;
 	(void)xTaskCreate(vPoseUpdateTask, "Pose", stackDepth, NULL, priority, NULL);
+}
+
+void MPU6050_GetPose(void)
+{
+    if(!g_selfcorrect_finished)
+        return;
+
+    MPU6050_GetData(&AccX, &AccY, &AccZ, &GyroX, &GyroY, &GyroZ);
+
+    // 如果陀螺是度/秒，请先转换：
+    const float DEG2RAD = M_PI / 180.0f;
+    // MPU6050 陀螺仪在±2000°/s量程下的灵敏度为 16.4 LSB/(°/s)
+    float gx_rad = (GyroX / 16.4f) * DEG2RAD;
+    float gy_rad = (GyroY / 16.4f) * DEG2RAD;
+    float gz_rad = (GyroZ / 16.4f) * DEG2RAD;
+
+    MadgwickAHRSupdateIMU(gx_rad, gy_rad, gz_rad, AccX, AccY, AccZ);
+    // 来自 MadgwickAHRS.c 的四元数转欧拉角函数原型
+    quat_to_euler_zyx(q0, q1, q2, q3, &yaw, &pitch, &roll);
+
+    //
+    const float RAD2DEG = 180.0f / M_PI;
+    pitch *= RAD2DEG;
+    roll  *= RAD2DEG;
+    yaw   *= RAD2DEG;
+
+    taskENTER_CRITICAL();
+        Comm_pitch = pitch;
+        Comm_roll = roll;
+        Comm_yaw = yaw;
+    taskEXIT_CRITICAL();
 }

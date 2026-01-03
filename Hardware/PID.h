@@ -54,10 +54,13 @@ void PID_SetTarget(PID_Parameter_t *status, float target);
  */
 /* 使用已绑定的 motor_status 作为反馈来源，调用时无需传入 feedback */
 float PID_ComputeIncremental(const PID_Config_t *cfg, PID_Parameter_t *status);
+/* 可指定外部反馈（姿态环直接用陀螺仪姿态值） */
+float PID_ComputeIncrementalWithFeedback(const PID_Config_t *cfg, PID_Parameter_t *status, float feedback);
 
 typedef enum {
-    PID_LOOP_SPEED = 0,
-    /* 预留其它环，如 PID_LOOP_POSITION = 1, ... */
+	PID_LOOP_SPEED = 0,
+	PID_LOOP_ATTITUDE = 1,   /* 姿态（俯仰）环：输出期望速度，作为速度环目标 */
+	/* 预留其它环，如 PID_LOOP_POSITION = 2, ... */
 } PID_Loop_enum;
 
 typedef enum {
