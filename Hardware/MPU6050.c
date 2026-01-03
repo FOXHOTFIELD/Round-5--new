@@ -3,6 +3,15 @@
 
 #define MPU6050_ADDRESS    0xD0
 
+#if !ENABLE_MPU6050_SELFTEST
+#define MPU6050_OFF_AX_DEFAULT ((int16_t)-7217)
+#define MPU6050_OFF_AY_DEFAULT ((int16_t)261)
+#define MPU6050_OFF_AZ_DEFAULT ((int16_t)-2070)
+#define MPU6050_OFF_GX_DEFAULT ((int16_t)10)
+#define MPU6050_OFF_GY_DEFAULT ((int16_t)-13)
+#define MPU6050_OFF_GZ_DEFAULT ((int16_t)52)
+#endif
+
 // 配置：是否启用 DWT 测帧率与是否随串口发送性能数据
 #ifndef ENABLE_DWT_FPS
 #define ENABLE_DWT_FPS 1
@@ -117,7 +126,7 @@ void MPU6050_Init(void)
 		if (div > 255) div = 255;
 		MPU6050_WriteReg(MPU6050_SMPLRT_DIV, (uint8_t)div);
 	}
-	MPU6050_WriteReg(MPU6050_CONFIG, 0x03);
+	MPU6050_WriteReg(MPU6050_CONFIG, 0x00);
 	MPU6050_WriteReg(MPU6050_GYRO_CONFIG, 0x18);
 	MPU6050_WriteReg(MPU6050_ACCEL_CONFIG, 0x00);
 	/* 配置 Madgwick 采样频率，与任务循环保持一致 */
@@ -125,12 +134,23 @@ void MPU6050_Init(void)
 
     MPU6050_StartPoseTask();
 
+#if ENABLE_MPU6050_SELFTEST
 	/* 创建自检任务，避免在初始化中阻塞 */
 	{
 		const uint16_t stackDepthSelf = 160; /* words */
 		const UBaseType_t prioritySelf = tskIDLE_PRIORITY + 1;
 		(void)xTaskCreate(vMPU6050SelfCorrectTask, "MPUSelf", stackDepthSelf, NULL, prioritySelf, NULL);
 	}
+#else
+	/* 跳过自检：使用预置零偏并立即允许姿态任务运行 */
+	ax_off = MPU6050_OFF_AX_DEFAULT;
+	ay_off = MPU6050_OFF_AY_DEFAULT;
+	az_off = MPU6050_OFF_AZ_DEFAULT;
+	gx_off = MPU6050_OFF_GX_DEFAULT;
+	gy_off = MPU6050_OFF_GY_DEFAULT;
+	gz_off = MPU6050_OFF_GZ_DEFAULT;
+	g_selfcorrect_finished = 1;
+#endif
 }
 
 void MPU6050_GetData(int16_t *pAccX, int16_t *pAccY, int16_t *pAccZ,

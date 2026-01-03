@@ -5,7 +5,7 @@
 
 #include "MotorDrive.h"
 
-#define PID_UPDATE_MS (5)
+#define PID_UPDATE_MS (3)
 
 typedef struct PID_Config_t
 {

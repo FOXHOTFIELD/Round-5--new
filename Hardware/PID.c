@@ -37,13 +37,13 @@ static void vPIDTask(void *pv);
 
 static PID_Config_t PID_Config_Speed = {
     .ErrorIntMax = 100, .ErrorIntMin = -100,
-    .Kp = 0.35f,   /* 提高比例，加快跟随 */
-    .Ki = 0.015f,  /* 略降积分，避免高比例下过冲 */
-    .Kd = 0.25f,   /* 略加微分，抑制快变抖动 */
+    .Kp = 1.2f,   /* 再提比例，加快跟随 */
+    .Ki = 0.025f,  /* 再降积分，收敛更快不过冲 */
+    .Kd = 0.32f,   /* 提高微分，抑制快变抖动 */
     .OutMax = 100, .OutMin = -100,
     .OutOffset = 0,
-    .FfGain = 0.45f,  /* 增强目标前馈，减少纯 PID 耗时 */
-    .ReverseDecay = 0.4f,
+    .FfGain = 0.65f,  /* 增强目标前馈，减少纯 PID 耗时 */
+    .ReverseDecay = 0.6f,
 };
 
 /* 姿态环（俯仰角 -> 期望速度），输出直接作为速度环 Target 使用 */
@@ -156,6 +156,17 @@ static float PID_ComputeIncremental_Internal(const PID_Config_t *cfg, PID_Parame
 
     float e = status->Target - fb;
     status->Error = e;
+
+    /* 速度环专用：目标很小时快速衰减历史输出，避免“目标到 0 但输出还在大幅度” */
+    if (!use_feedback_override) {
+        const float tgt_small = 5.0f;  /* 速度目标小于 5% 视为需要快速收敛 */
+        const float err_small = 10.0f; /* 误差也不大时才清，避免干扰大幅纠偏 */
+        if (fabsf_local(status->Target) < tgt_small && fabsf_local(e) < err_small) {
+            prev1 *= 0.35f;
+            prev2 *= 0.35f;
+            last_out *= 0.35f;
+        }
+    }
 
     /* 姿态环防“靠近 0 度仍有大输出”：在小角度死区内衰减历史项并清积分来源 */
     if (use_feedback_override) {

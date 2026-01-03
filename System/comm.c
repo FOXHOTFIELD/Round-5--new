@@ -72,7 +72,7 @@ static void vCommTask(void *pv)
     (void)pv;
     for (;;)
     {
-        float msg[13];
+        float msg[14];
         msg[0] = Comm_pitch;
         msg[1] = Comm_roll;
         msg[2] = Comm_yaw;
@@ -89,12 +89,13 @@ static void vCommTask(void *pv)
         PID_GetParamTarget(PID_LOOP_SPEED, PID_MOTOR_1, msg + 10);
         PID_GetParamTarget(PID_LOOP_SPEED, PID_MOTOR_2, msg + 11);
         msg[12] = Comm_pose_tag;
+        msg[13] = 0;
 
         /* 附加: 当前堆剩余与历史最小堆剩余（Bytes） */
 //       msg[10] = (float)xPortGetFreeHeapSize();
 //        msg[11] = (float)xPortGetMinimumEverFreeHeapSize();
        //msg[10] = (float)xPortGetFreeHeapSize();
-        Serial_SendJustFloat(msg, 13);
+        Serial_SendJustFloat(msg, 14);
 
         Serial_ProcessRxPackets();
 

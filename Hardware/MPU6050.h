@@ -17,6 +17,11 @@
 #include "portmacro.h"
 #include "task.h"
 
+/* 1=运行上电自检与零偏校准；0=使用预置零偏值跳过自检 */
+#ifndef ENABLE_MPU6050_SELFTEST
+#define ENABLE_MPU6050_SELFTEST 0
+#endif
+
 void MPU6050_WriteReg(uint8_t RegAddress, uint8_t Data);
 uint8_t MPU6050_ReadReg(uint8_t RegAddress);
 
