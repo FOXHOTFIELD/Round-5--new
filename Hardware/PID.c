@@ -36,10 +36,10 @@ static void vPIDTask(void *pv);
 #define PID_SPEED_MOTOR_COUNT 2
 
 static PID_Config_t PID_Config_Speed = {
-    .ErrorIntMax = 100, .ErrorIntMin = -100,
+    .ErrorIntMax = 10000, .ErrorIntMin = -10000,
     .Kp = 1.2f,   /* 再提比例，加快跟随 */
-    .Ki = 0.025f,  /* 再降积分，收敛更快不过冲 */
-    .Kd = 0.32f,   /* 提高微分，抑制快变抖动 */
+    .Ki = 0.005f,  /* 1ms 采样下保持原先积分时间常数 */
+    .Kd = 1.6f,   /* 1ms 采样下保持原先微分时间常数 */
     .OutMax = 100, .OutMin = -100,
     .OutOffset = 0,
     .FfGain = 0.65f,  /* 增强目标前馈，减少纯 PID 耗时 */
@@ -49,10 +49,10 @@ static PID_Config_t PID_Config_Speed = {
 /* 姿态环（俯仰角 -> 期望速度），输出直接作为速度环 Target 使用 */
 static PID_Config_t PID_Config_Attitude = {
     .ErrorIntMax = 15, .ErrorIntMin = -15,
-    .Kp = 2.0f,   /* 降低比例，先压震荡 */
-    .Ki = 0.05f,  /* 大幅减小积分，防止靠近 0° 时积累输出 */
-    .Kd = 1.2f,   /* 保持微分抑制快速倾倒 */
-    .OutMax = 60, .OutMin = -60, /* 收紧速度设定，避免过冲 */
+    .Kp = 3.0f,   /* 提高比例，加快姿态纠偏 */
+    .Ki = 0.02f,  /* 1ms 采样下保持原积分时间常数 */
+    .Kd = 0.0f,   /* 提高微分，抑制快速倾倒时的尖峰 */
+    .OutMax = 100, .OutMin = -100, /* 允许更快的姿态输出幅度 */
     .OutOffset = 0,
     .FfGain = 0.0f,
     .ReverseDecay = 0.6f, /* 误差翻转时快速衰减历史项/输出，减弱“打摆” */
@@ -61,6 +61,8 @@ static PID_Config_t PID_Config_Attitude = {
 static PID_Parameter_t PID_Param_Speed[PID_SPEED_MOTOR_COUNT];
 static PID_Parameter_t PID_Param_Attitude;
 extern Motor_Status_t motor_status[2];
+
+volatile uint32_t g_pid_loop_counter = 0; /* PID 任务循环计数供 DWT 统计 */
 
 void PID_Init(void)
 {
@@ -168,17 +170,7 @@ static float PID_ComputeIncremental_Internal(const PID_Config_t *cfg, PID_Parame
         }
     }
 
-    /* 姿态环防“靠近 0 度仍有大输出”：在小角度死区内衰减历史项并清积分来源 */
-    if (use_feedback_override) {
-        const float deadband = 0.6f; /* 允许的姿态死区（度） */
-        if (fabsf_local(e) < deadband) {
-            e = 0.0f;
-            /* 清掉已积累的历史，避免“顶着”输出不回零 */
-            prev1 *= 0.3f;
-            prev2 *= 0.3f;
-            last_out *= 0.3f;
-        }
-    }
+    /* 姿态环近零角度不再设置死区衰减，保持线性响应 */
 
     /* 误差反转时衰减历史项，降低积累带来的拖尾；小误差区不衰减以避免“掉头下坠” */
     float mag = 0.5f * (fabsf_local(e) + fabsf_local(prev1));
@@ -333,16 +325,15 @@ static void vPIDTask(void *pv)
 
     for (;;)
     {
-        /* 姿态环：读取俯仰角，输出期望速度，传给左右电机速度环 */
+        /* 姿态环内环：读取俯仰角，直接输出到电机 */
         float pitch_deg = 0.0f;
         taskENTER_CRITICAL();
             pitch_deg = Comm_pitch;
         taskEXIT_CRITICAL();
 
-        float speed_target = PID_ComputeIncrementalWithFeedback(&PID_Config_Attitude, &PID_Param_Attitude, pitch_deg);
-        PID_Param_Speed[0].Target = speed_target;
-        PID_Param_Speed[1].Target = speed_target;
-        Comm_pose_tag = speed_target;
+        /* 直接用姿态环（pitch -> 电机输出）作为内环 */
+        float out = PID_ComputeIncrementalWithFeedback(&PID_Config_Attitude, &PID_Param_Attitude, pitch_deg);
+        Comm_pose_tag = pitch_deg;
 
         /* 写入共享 encoder 值，vCommTask 会合并发送 */
         float pct = Encoder_GetAndResetPercent(ENCODER_A);
@@ -354,13 +345,12 @@ static void vPIDTask(void *pv)
         PID_Param_Speed[1].motor_status->SpeedInPercent = pct;
 
 
-        float out = PID_ComputeIncremental(&PID_Config_Speed, &PID_Param_Speed[0]);
         Comm_out_a = out;
-        Motor_SetSpeedPercent(1, out);
-
-        out = PID_ComputeIncremental(&PID_Config_Speed, &PID_Param_Speed[1]);
         Comm_out_b = out;
+        Motor_SetSpeedPercent(1, out);
         Motor_SetSpeedPercent(2, out);
+
+        g_pid_loop_counter++;
 
         vTaskDelayUntil(&last, period);
     }

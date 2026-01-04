@@ -5,7 +5,7 @@
 
 #include "MotorDrive.h"
 
-#define PID_UPDATE_MS (3)
+#define PID_UPDATE_MS (1)
 
 typedef struct PID_Config_t
 {
@@ -56,6 +56,9 @@ void PID_SetTarget(PID_Parameter_t *status, float target);
 float PID_ComputeIncremental(const PID_Config_t *cfg, PID_Parameter_t *status);
 /* 可指定外部反馈（姿态环直接用陀螺仪姿态值） */
 float PID_ComputeIncrementalWithFeedback(const PID_Config_t *cfg, PID_Parameter_t *status, float feedback);
+
+/* PID 任务循环计数，用于 DWT 统计实际帧率 */
+extern volatile uint32_t g_pid_loop_counter;
 
 typedef enum {
 	PID_LOOP_SPEED = 0,

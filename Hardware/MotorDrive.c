@@ -186,7 +186,7 @@ void Motor_SetSpeedPercent(uint8_t index, float percent)
 
     uint32_t abs100 = (p100 >= 0) ? (uint32_t)p100 : (uint32_t)(-p100);
     /* 将百分比均匀映射到 0..1439（包含 1439），使用整数四舍五入 */
-    const uint32_t PWM_MAP_MAX = 1439U;
+    const uint32_t PWM_MAP_MAX = 2878U;
     uint16_t duty = (uint16_t)((abs100 * PWM_MAP_MAX + 5000U) / 10000U);
 
     /* 复用整数 PWM 接口，统一方向与比较寄存器设置 */
