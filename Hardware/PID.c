@@ -48,14 +48,14 @@ static PID_Config_t PID_Config_Speed = {
 
 /* 姿态环（俯仰角 -> 期望速度），输出直接作为速度环 Target 使用 */
 static PID_Config_t PID_Config_Attitude = {
-    .ErrorIntMax = 15, .ErrorIntMin = -15,
+    .ErrorIntMax = 10, .ErrorIntMin = -10,
     .Kp = 3.0f,   /* 提高比例，加快姿态纠偏 */
     .Ki = 0.02f,  /* 1ms 采样下保持原积分时间常数 */
     .Kd = 0.0f,   /* 提高微分，抑制快速倾倒时的尖峰 */
     .OutMax = 100, .OutMin = -100, /* 允许更快的姿态输出幅度 */
     .OutOffset = 0,
-    .FfGain = 0.0f,
-    .ReverseDecay = 0.6f, /* 误差翻转时快速衰减历史项/输出，减弱“打摆” */
+    .FfGain = 0.5f,
+    .ReverseDecay = 0.0f, /* 误差翻转时快速衰减历史项/输出，减弱“打摆” */
 };
 
 static PID_Parameter_t PID_Param_Speed[PID_SPEED_MOTOR_COUNT];

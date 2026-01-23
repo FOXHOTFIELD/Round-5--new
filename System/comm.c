@@ -80,7 +80,7 @@ static void vCommTask(void *pv)
     (void)pv;
     for (;;)
     {
-        float msg[15];
+        float msg[17];
         msg[0] = Comm_pitch;
         msg[1] = Comm_roll;
         msg[2] = Comm_yaw;
@@ -99,12 +99,14 @@ static void vCommTask(void *pv)
         msg[12] = Comm_pose_tag;
         msg[13] = Comm_fps;     /* DWT 实测帧率（Hz） */
         msg[14] = Comm_dt_ms;   /* DWT 实测周期（ms） */
+        PID_GetConfigParam(PID_LOOP_ATTITUDE, PID_CONFIG_FF_GAIN, msg + 15);
+        PID_GetConfigParam(PID_LOOP_ATTITUDE, PID_CONFIG_REVERSE_DECAY, msg + 16);
 
         /* 附加: 当前堆剩余与历史最小堆剩余（Bytes） */
 //       msg[10] = (float)xPortGetFreeHeapSize();
 //        msg[11] = (float)xPortGetMinimumEverFreeHeapSize();
        //msg[10] = (float)xPortGetFreeHeapSize();
-        Serial_SendJustFloat(msg, 15);
+        Serial_SendJustFloat(msg, 17);
 
         Serial_ProcessRxPackets();
 
